@@ -20,6 +20,3 @@
     "lowdb": "^6.0.1"
   }
 }
-"dependencies": {
-  "pdfkit": "^0.15.0"
-}
