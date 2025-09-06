@@ -10,7 +10,7 @@ import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import fs from 'fs'                     // ⬅️ lisatud
+import fs from 'fs'
 
 const app = express()
 app.use(express.json())
@@ -21,14 +21,15 @@ app.use(cors())
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 
-// __dirname ESM-is
+// __dirname (ESM)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// ⬇️ andmete kaust: FREE Renderis kasutame /tmp (ja loome kausta kindlalt)
-const dataDir = process.env.DATA_DIR || '/tmp/glamox-data'
-fs.mkdirSync(dataDir, { recursive: true })
+// FREE plaan: salvesta otse /tmp alla (see kataloog on olemas ja kirjutatav).
+// Kui tahad tulevikus püsikettale (/var/data), muuda DATA_DIR env-iga.
+const dataDir = process.env.DATA_DIR || '/tmp'
+fs.mkdirSync(dataDir, { recursive: true }) // ohutu ka siis, kui /tmp juba on olemas
 
-// LowDB setup
+// LowDB
 const dbFile = path.join(dataDir, 'data.json')
 const adapter = new JSONFile(dbFile)
 const db = new Low(adapter, { users: [], departments: [], questions: [], audits: [], answers: [] })
@@ -36,12 +37,17 @@ await db.read()
 db.data ||= { users: [], departments: [], questions: [], audits: [], answers: [] }
 const save = () => db.write()
 
-// --- auth middleware ---
+// --- AUTH MIDDLEWARE ---
 function authRequired(req, res, next) {
   const auth = req.headers.authorization || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
   if (!token) return res.status(401).json({ error: 'missing token' })
-  try { req.user = jwt.verify(token, JWT_SECRET); next() } catch { res.status(401).json({ error: 'invalid token' }) }
+  try {
+    req.user = jwt.verify(token, JWT_SECRET)
+    next()
+  } catch {
+    res.status(401).json({ error: 'invalid token' })
+  }
 }
 function requireRole(role) {
   return (req, res, next) => {
@@ -51,8 +57,10 @@ function requireRole(role) {
   }
 }
 
-// --- routes ---
-app.post('/auth/login', async (req,res) => {
+// --- ROUTES ---
+
+// Login
+app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body || {}
   const user = db.data.users.find(u => u.email === email)
   if (!user) return res.status(401).json({ error: 'invalid credentials' })
@@ -61,12 +69,14 @@ app.post('/auth/login', async (req,res) => {
   res.json({ token, role: user.role, email: user.email })
 })
 
-app.get('/api/schema', (req,res) => {
+// Avalik skeem (frontend loeb siit)
+app.get('/api/schema', (req, res) => {
   const deps = db.data.departments, questions = db.data.questions
   const schema = {
     meta: { version: 'glx-gpe-render', org: '(server)' },
     departments: deps.map(d => ({
-      id: d.id, name: d.name,
+      id: d.id,
+      name: d.name,
       questions: questions
         .filter(q => q.department_id === d.id)
         .map(q => ({
@@ -82,26 +92,35 @@ app.get('/api/schema', (req,res) => {
   res.json(schema)
 })
 
-app.post('/api/departments', authRequired, requireRole('admin'), async (req,res) => {
+// Osakonnad (CRUD)
+app.post('/api/departments', authRequired, requireRole('admin'), async (req, res) => {
   const { id, name } = req.body || {}
   if (!id || !name) return res.status(400).json({ error: 'id and name required' })
   if (db.data.departments.find(d => d.id === id)) return res.status(400).json({ error: 'id exists' })
-  db.data.departments.push({ id, name }); await save(); res.json({ ok: true })
+  db.data.departments.push({ id, name })
+  await save()
+  res.json({ ok: true })
 })
-app.put('/api/departments/:id', authRequired, requireRole('admin'), async (req,res) => {
+app.put('/api/departments/:id', authRequired, requireRole('admin'), async (req, res) => {
   const dep = db.data.departments.find(d => d.id === req.params.id)
   if (!dep) return res.status(404).json({ error: 'not found' })
-  dep.name = req.body.name ?? dep.name; await save(); res.json({ ok: true })
+  dep.name = req.body.name ?? dep.name
+  await save()
+  res.json({ ok: true })
 })
-app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (req,res) => {
+app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (req, res) => {
   db.data.questions = db.data.questions.filter(q => q.department_id !== req.params.id)
   db.data.departments = db.data.departments.filter(d => d.id !== req.params.id)
-  await save(); res.json({ ok: true })
+  await save()
+  res.json({ ok: true })
 })
 
-app.post('/api/questions', authRequired, requireRole('admin'), async (req,res) => {
+// Küsimused (CRUD)
+app.post('/api/questions', authRequired, requireRole('admin'), async (req, res) => {
   const { id, department_id, text, clause, stds, guidance, tags } = req.body || {}
-  if (!id || !department_id || !text || !stds) return res.status(400).json({ error: 'id, department_id, text, stds required' })
+  if (!id || !department_id || !text || !stds) {
+    return res.status(400).json({ error: 'id, department_id, text, stds required' })
+  }
   db.data.questions.push({
     id,
     department_id,
@@ -111,9 +130,10 @@ app.post('/api/questions', authRequired, requireRole('admin'), async (req,res) =
     guidance: guidance || null,
     tags: tags || []
   })
-  await save(); res.json({ ok: true })
+  await save()
+  res.json({ ok: true })
 })
-app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
+app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req, res) => {
   const q = db.data.questions.find(x => x.id === req.params.id)
   if (!q) return res.status(404).json({ error: 'not found' })
   const { text, clause, stds, guidance, department_id } = req.body || {}
@@ -122,30 +142,40 @@ app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req,res
   if (stds !== undefined) q.stds = Array.isArray(stds) ? stds : String(stds).split(' ')
   if (guidance !== undefined) q.guidance = guidance
   if (department_id !== undefined) q.department_id = department_id
-  await save(); res.json({ ok: true })
+  await save()
+  res.json({ ok: true })
 })
-app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
+app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req, res) => {
   db.data.questions = db.data.questions.filter(q => q.id !== req.params.id)
-  await save(); res.json({ ok: true })
+  await save()
+  res.json({ ok: true })
 })
 
-app.post('/api/audits', authRequired, requireRole(['admin','auditor']), async (req,res) => {
+// Auditi salvestus/vaatamine
+app.post('/api/audits', authRequired, requireRole(['admin', 'auditor']), async (req, res) => {
   const { org, department_id, standards, answers } = req.body || {}
   const id = (db.data.audits.at(-1)?.id || 0) + 1
-  db.data.audits.push({ id, org: org || null, department_id, standards: standards || [], created_at: new Date().toISOString() })
+  db.data.audits.push({
+    id,
+    org: org || null,
+    department_id,
+    standards: standards || [],
+    created_at: new Date().toISOString()
+  })
   for (const a of (answers || [])) db.data.answers.push({ audit_id: id, ...a })
-  await save(); res.json({ ok: true, audit_id: id })
+  await save()
+  res.json({ ok: true, audit_id: id })
 })
-app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','external']), (req,res) => {
+app.get('/api/audits/:id', authRequired, requireRole(['admin', 'auditor', 'external']), (req, res) => {
   const a = db.data.audits.find(x => x.id === Number(req.params.id))
   if (!a) return res.status(404).json({ error: 'not found' })
   const ans = db.data.answers.filter(x => x.audit_id === a.id)
   res.json({ audit: a, answers: ans })
 })
 
-// serveeri builditud front
+// Serveeri builditud frontend (SPA)
 app.use(express.static(path.join(__dirname, 'public')))
-app.get(/^(?!\/api).*/, (req,res) => {
+app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 
