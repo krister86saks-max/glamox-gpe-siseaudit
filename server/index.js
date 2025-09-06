@@ -1,4 +1,4 @@
-
+// server/index.js
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
@@ -10,10 +10,10 @@ import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'fs'                     // ⬅️ lisatud
 
 const app = express()
 app.use(express.json())
-
 app.use(helmet())
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }))
 app.use(cors())
@@ -21,8 +21,14 @@ app.use(cors())
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 
+// __dirname ESM-is
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dataDir = process.env.DATA_DIR || process.cwd()
+
+// ⬇️ andmete kaust: FREE Renderis kasutame /tmp (ja loome kausta kindlalt)
+const dataDir = process.env.DATA_DIR || '/tmp/glamox-data'
+fs.mkdirSync(dataDir, { recursive: true })
+
+// LowDB setup
 const dbFile = path.join(dataDir, 'data.json')
 const adapter = new JSONFile(dbFile)
 const db = new Low(adapter, { users: [], departments: [], questions: [], audits: [], answers: [] })
@@ -30,6 +36,7 @@ await db.read()
 db.data ||= { users: [], departments: [], questions: [], audits: [], answers: [] }
 const save = () => db.write()
 
+// --- auth middleware ---
 function authRequired(req, res, next) {
   const auth = req.headers.authorization || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
@@ -44,6 +51,7 @@ function requireRole(role) {
   }
 }
 
+// --- routes ---
 app.post('/auth/login', async (req,res) => {
   const { email, password } = req.body || {}
   const user = db.data.users.find(u => u.email === email)
@@ -59,9 +67,16 @@ app.get('/api/schema', (req,res) => {
     meta: { version: 'glx-gpe-render', org: '(server)' },
     departments: deps.map(d => ({
       id: d.id, name: d.name,
-      questions: questions.filter(q => q.department_id === d.id).map(q => ({
-        id: q.id, text: q.text, clause: q.clause || undefined, stds: q.stds || [], guidance: q.guidance || undefined, tags: q.tags || []
-      }))
+      questions: questions
+        .filter(q => q.department_id === d.id)
+        .map(q => ({
+          id: q.id,
+          text: q.text,
+          clause: q.clause || undefined,
+          stds: q.stds || [],
+          guidance: q.guidance || undefined,
+          tags: q.tags || []
+        }))
     }))
   }
   res.json(schema)
@@ -87,7 +102,15 @@ app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (re
 app.post('/api/questions', authRequired, requireRole('admin'), async (req,res) => {
   const { id, department_id, text, clause, stds, guidance, tags } = req.body || {}
   if (!id || !department_id || !text || !stds) return res.status(400).json({ error: 'id, department_id, text, stds required' })
-  db.data.questions.push({ id, department_id, text, clause: clause || null, stds: Array.isArray(stds)? stds : String(stds).split(' '), guidance: guidance || null, tags: tags || [] })
+  db.data.questions.push({
+    id,
+    department_id,
+    text,
+    clause: clause || null,
+    stds: Array.isArray(stds) ? stds : String(stds).split(' '),
+    guidance: guidance || null,
+    tags: tags || []
+  })
   await save(); res.json({ ok: true })
 })
 app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
@@ -110,7 +133,7 @@ app.post('/api/audits', authRequired, requireRole(['admin','auditor']), async (r
   const { org, department_id, standards, answers } = req.body || {}
   const id = (db.data.audits.at(-1)?.id || 0) + 1
   db.data.audits.push({ id, org: org || null, department_id, standards: standards || [], created_at: new Date().toISOString() })
-  for (const a of answers) db.data.answers.push({ audit_id: id, ...a })
+  for (const a of (answers || [])) db.data.answers.push({ audit_id: id, ...a })
   await save(); res.json({ ok: true, audit_id: id })
 })
 app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','external']), (req,res) => {
@@ -120,6 +143,7 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
   res.json({ audit: a, answers: ans })
 })
 
+// serveeri builditud front
 app.use(express.static(path.join(__dirname, 'public')))
 app.get(/^(?!\/api).*/, (req,res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
