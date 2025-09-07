@@ -42,6 +42,33 @@ export default function App() {
     return qs
   }, [dept, stds, query])
 
+  // Kaart küsimuste järgi, et kokkuvõttes näidata
+  const questionById = useMemo(() => {
+    const map = new Map<string, Question>()
+    schema?.departments.forEach(d => d.questions.forEach(q => map.set(q.id, q)))
+    return map
+  }, [schema])
+
+  const summaryPE = useMemo(() => {
+    return Object.entries(answers)
+      .filter(([, a]) => a?.pe && !a.mv)
+      .map(([id, a]) => ({
+        id,
+        text: questionById.get(id)?.text ?? '(küsimus puudub skeemist)',
+        note: a?.note || '',
+      }))
+  }, [answers, questionById])
+
+  const summaryMV = useMemo(() => {
+    return Object.entries(answers)
+      .filter(([, a]) => a?.mv)
+      .map(([id, a]) => ({
+        id,
+        text: questionById.get(id)?.text ?? '(küsimus puudub skeemist)',
+        note: a?.note || '',
+      }))
+  }, [answers, questionById])
+
   async function submitAudit() {
     if (!dept) return
     const bad = Object.entries(answers).find(([ , a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
@@ -117,15 +144,68 @@ export default function App() {
                   <div className="flex items-start gap-2">
                     <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
                     {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
+                    <span className="ml-auto flex items-center gap-1">
+                      {a.mv && <Excl color="red" title="Mittevastavus" />}
+                      {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
+                      {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
+                    </span>
                   </div>
                   <div className="mt-2">{q.text}</div>
                   {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                  {/* Nupud */}
-                  <div className="mt-2 flex gap-2 flex-wrap">
-                    <Toggle label="Vastab standardile" active={!!a.vs} color="green" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, vs: !(cur.vs)} }; return {...p, [q.id]: {...cur, vs: !(cur.vs)} } })} />
-                    <Toggle label="Parendusettepanek" active={!!a.pe} color="blue" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, pe: !(cur.pe)} }; return {...p, [q.id]: {...cur, pe: !(cur.pe)} } })} />
-                    <Toggle label="Mittevastavus" active={!!a.mv} color="red" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; return {...p, [q.id]: {...cur, mv: !(cur.mv), vs: false, pe:false } } })} />
+                  {/* Checkboxid valikuteks */}
+                  <div className="mt-2 grid sm:grid-cols-3 gap-3">
+                    <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!a.vs}
+                        onChange={() =>
+                          setAnswers(p => {
+                            const cur = p[q.id] || {}
+                            const next = cur.vs ? { ...cur, vs: false } : { ...cur, vs: true, pe: false, mv: false }
+                            return { ...p, [q.id]: next }
+                          })
+                        }
+                      />
+                      <span>Vastab standardile</span>
+                      {!!a.vs && <Check color="green" title="Vastab standardile" />}
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!a.pe && !a.mv}
+                        onChange={() =>
+                          setAnswers(p => {
+                            const cur = p[q.id] || {}
+                            const next = cur.pe && !cur.mv
+                              ? { ...cur, pe: false }
+                              : { ...cur, pe: true, mv: false, vs: false }
+                            return { ...p, [q.id]: next }
+                          })
+                        }
+                      />
+                      <span>Parendusettepanek</span>
+                      {!!a.pe && !a.mv && <Excl color="blue" title="Parendusettepanek" />}
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!a.mv}
+                        onChange={() =>
+                          setAnswers(p => {
+                            const cur = p[q.id] || {}
+                            const next = cur.mv
+                              ? { ...cur, mv: false }
+                              : { ...cur, mv: true, vs: false, pe: false }
+                            return { ...p, [q.id]: next }
+                          })
+                        }
+                      />
+                      <span>Mittevastavus</span>
+                      {!!a.mv && <Excl color="red" title="Mittevastavus" />}
+                    </label>
                   </div>
 
                   {/* Märkus + Tõendid */}
@@ -153,6 +233,46 @@ export default function App() {
                 </div>
               )
             })}
+
+            {/* Kokkuvõte */}
+            {(summaryMV.length > 0 || summaryPE.length > 0) && (
+              <div className="mt-8 p-4 border rounded">
+                <h2 className="text-lg font-semibold mb-3">Kokkuvõte</h2>
+
+                {summaryMV.length > 0 && (
+                  <div className="mb-4">
+                    <div className="font-semibold flex items-center gap-2">
+                      <Excl color="red" title="Mittevastavused" /> Mittevastavused ({summaryMV.length})
+                    </div>
+                    <ul className="list-disc ml-5 mt-1 space-y-1">
+                      {summaryMV.map(item => (
+                        <li key={'mv-' + item.id}>
+                          <span className="font-mono">{item.id}</span> — {item.text}
+                          {item.note ? <span className="block text-sm text-gray-600">Märkus: {item.note}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {summaryPE.length > 0 && (
+                  <div>
+                    <div className="font-semibold flex items-center gap-2">
+                      <Excl color="blue" title="Parendusettepanekud" /> Parendusettepanekud ({summaryPE.length})
+                    </div>
+                    <ul className="list-disc ml-5 mt-1 space-y-1">
+                      {summaryPE.map(item => (
+                        <li key={'pe-' + item.id}>
+                          <span className="font-mono">{item.id}</span> — {item.text}
+                          {item.note ? <span className="block text-sm text-gray-600">Märkus: {item.note}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end">
               <button className="px-4 py-2 rounded border" onClick={submitAudit}>Salvesta audit</button>
             </div>
@@ -161,15 +281,6 @@ export default function App() {
       )}
     </div>
   )
-}
-
-function Toggle({ label, active, onClick, color }: { label: string; active: boolean; onClick: ()=>void; color: 'green'|'red'|'blue' }) {
-  const colors: any = {
-    green: active ? 'bg-green-600 text-white border-green-700' : 'border-green-600 text-green-700',
-    red: active ? 'bg-red-600 text-white border-red-700' : 'border-red-600 text-red-700',
-    blue: active ? 'bg-blue-600 text-white border-blue-700' : 'border-blue-600 text-blue-700',
-  }
-  return <button className={'px-3 py-1 rounded border ' + colors[color]} onClick={onClick}>{label}</button>
 }
 
 function Excl({ color, title }: { color: 'red'|'blue'; title: string }) {
