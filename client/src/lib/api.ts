@@ -12,31 +12,50 @@ export type Question = {
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
-function authHeaders() {
-  const token = localStorage.getItem("jwt") || "";
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// Ühtne viis päiste loomiseks (sobib HeadersInit-ile)
+function buildHeaders(extra?: HeadersInit): HeadersInit {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  const token = localStorage.getItem("jwt");
+  if (token) h["Authorization"] = `Bearer ${token}`;
+
+  if (extra) {
+    if (Array.isArray(extra)) {
+      for (const [k, v] of extra) h[k] = String(v);
+    } else if (extra instanceof Headers) {
+      extra.forEach((v, k) => (h[k] = v));
+    } else {
+      Object.assign(h, extra as Record<string, string>);
+    }
+  }
+  return h;
 }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders(),
-      ...(init.headers || {}),
-    },
+    headers: buildHeaders(init.headers),
   });
   if (!res.ok) {
     let msg = `${res.status}`;
-    try { msg = (await res.json()).error || msg; } catch {}
+    try {
+      const j = await res.json();
+      msg = (j as any).error || msg;
+    } catch {}
     throw new Error(msg);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 export const fetchDepartments = () => api<Department[]>("/api/departments");
+
 export const createDepartment = (dep: Department) =>
-  api<{ ok: true }>("/api/departments", { method: "POST", body: JSON.stringify(dep) });
+  api<{ ok: true }>("/api/departments", {
+    method: "POST",
+    body: JSON.stringify(dep),
+  });
 
 export const createQuestion = (q: Question) =>
-  api<{ ok: true }>("/api/questions", { method: "POST", body: JSON.stringify(q) });
+  api<{ ok: true }>("/api/questions", {
+    method: "POST",
+    body: JSON.stringify(q),
+  });
