@@ -1,13 +1,19 @@
 import React from 'react'
-import Summary from './components/summary'
+import AuditorHeader from './AuditorHeader'
+import Summary, { SummaryItem } from './components/summary'
 
 export default function App() {
-  // Temporary shell App so the project builds while you wire Summary into real data.
+  // TODO: Replace these with your real computed arrays
+  const summaryMV: SummaryItem[] = []
+  const summaryPE: SummaryItem[] = []
+
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Glamox GPE Siseaudit</h1>
-      <p className="mb-2">App on töös. Kokkuvõtte komponent on lisatud:</p>
-      <Summary />
+      {/* Header (loads/saves audit meta) */}
+      <AuditorHeader auditId="draft" />
+      {/* Summary (shows MV & PE with clauses) */}
+      <Summary mv={summaryMV} pe={summaryPE} />
     </div>
   )
 }
