@@ -35,6 +35,46 @@ await db.read()
 db.data ||= { users: [], departments: [], questions: [], audits: [], answers: [] }
 const save = () => db.write()
 
+// --- (valikuline) Auto-seed kui tühi (ainult kui tabelid on tühjad) ---
+if ((db.data.departments?.length ?? 0) === 0 && (db.data.questions?.length ?? 0) === 0) {
+  db.data.departments.push(
+    { id: 'dep-too', name: 'Tööohutus' },
+    { id: 'dep-keskk', name: 'Keskkond' },
+    { id: 'dep-kval', name: 'Kvaliteet' }
+  )
+  db.data.questions.push(
+    {
+      id: 'q-001',
+      department_id: 'dep-too',
+      text: 'Kas riskihindamine on ajakohastatud?',
+      clause: '6.1.2',
+      stds: ['ISO45001:6.1.2'],
+      guidance: null,
+      tags: ['tööohutus']
+    },
+    {
+      id: 'q-002',
+      department_id: 'dep-keskk',
+      text: 'Kas keskkonnaaspektide register on üle vaadatud?',
+      clause: '6.1.2',
+      stds: ['ISO14001:6.1.2'],
+      guidance: null,
+      tags: ['keskkond']
+    },
+    {
+      id: 'q-003',
+      department_id: 'dep-kval',
+      text: 'Kas kvaliteedieesmärgid on mõõdetavad?',
+      clause: '6.2',
+      stds: ['ISO9001:6.2'],
+      guidance: null,
+      tags: ['kvaliteet']
+    }
+  )
+  await save()
+  console.log('Auto-seed: lisasin demo osakonnad ja küsimused (tühja baasi korral).')
+}
+
 // --- AUTH MIDDLEWARE ---
 function authRequired(req, res, next) {
   const auth = req.headers.authorization || ''
@@ -57,12 +97,10 @@ function requireRole(role) {
   }
 }
 
-// --- Healthcheck (Renderile kasulik) ---
+// --- Healthcheck ---
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 // --- LOGIN ---
-// Säilitame sinu loogika (users LowDB-s bcrypt hashiga), aga eksponeerime
-// nii /api/admin/login kui /api/login (alias), et front ei jookseks 404/405 sisse.
 async function handleLogin(req, res) {
   const { email, password } = req.body || {}
   const user = db.data.users.find(u => u.email === email)
@@ -77,15 +115,12 @@ async function handleLogin(req, res) {
   )
   res.json({ token, role: user.role, email: user.email })
 }
-
-// sinu endine tee (säilitame tagurpidi ühilduvuse jaoks)
-app.post('/auth/login', handleLogin)
-// UI ootab pigem neid:
-app.post('/api/admin/login', handleLogin)
+app.post('/auth/login', handleLogin)        // backward compat
+app.post('/api/admin/login', handleLogin)   // UI kasutab seda
 app.post('/api/login', handleLogin)
 
-// --- Avalik skeem ---
-app.get('/api/schema', (req, res) => {
+// --- Avalik skeem (dept + nende küsimused) ---
+app.get('/api/schema', (_req, res) => {
   const deps = db.data.departments
   const questions = db.data.questions
   const schema = {
@@ -108,7 +143,15 @@ app.get('/api/schema', (req, res) => {
   res.json(schema)
 })
 
-// --- Osakonnad (CRUD) ---
+// --- Osakonnad (GET + CRUD) ---
+app.get('/api/departments', authRequired, requireRole(['admin', 'auditor', 'external']), (_req, res) => {
+  res.json(db.data.departments || [])
+})
+app.get('/api/departments/:id', authRequired, requireRole(['admin', 'auditor', 'external']), (req, res) => {
+  const dep = (db.data.departments || []).find(d => d.id === req.params.id)
+  if (!dep) return res.status(404).json({ error: 'not found' })
+  res.json(dep)
+})
 app.post('/api/departments', authRequired, requireRole('admin'), async (req, res) => {
   const { id, name } = req.body || {}
   if (!id || !name) return res.status(400).json({ error: 'id and name required' })
