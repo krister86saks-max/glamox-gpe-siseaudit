@@ -24,12 +24,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 // __dirname (ESM)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// FREE plaan: salvesta otse /tmp alla (see kataloog on olemas ja kirjutatav).
-// Kui tahad tulevikus püsikettale (/var/data), muuda DATA_DIR env-iga.
+// LowDB setup
 const dataDir = process.env.DATA_DIR || '/tmp'
-fs.mkdirSync(dataDir, { recursive: true }) // ohutu ka siis, kui /tmp juba on olemas
-
-// LowDB
+fs.mkdirSync(dataDir, { recursive: true })
 const dbFile = path.join(dataDir, 'data.json')
 const adapter = new JSONFile(dbFile)
 const db = new Low(adapter, { users: [], departments: [], questions: [], audits: [], answers: [] })
@@ -69,7 +66,7 @@ app.post('/auth/login', async (req, res) => {
   res.json({ token, role: user.role, email: user.email })
 })
 
-// Avalik skeem (frontend loeb siit)
+// Avalik skeem
 app.get('/api/schema', (req, res) => {
   const deps = db.data.departments, questions = db.data.questions
   const schema = {
@@ -173,6 +170,22 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin', 'auditor', 'exter
   res.json({ audit: a, answers: ans })
 })
 
+// --- UUS ROUTE: auditi päise uuendamine ---
+app.put('/api/audits/:id/header', authRequired, requireRole(['admin', 'auditor']), async (req, res) => {
+  const audit = db.data.audits.find(x => x.id === Number(req.params.id))
+  if (!audit) return res.status(404).json({ error: 'not found' })
+  const { date, auditor_name, auditee_name, sub_department } = req.body || {}
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Kuupäev (YYYY-MM-DD) on kohustuslik' })
+  if (!auditor_name) return res.status(400).json({ error: 'Auditeerija nimi on kohustuslik' })
+  if (!auditee_name) return res.status(400).json({ error: 'Auditeeritav on kohustuslik' })
+  audit.date = date
+  audit.auditor_name = auditor_name
+  audit.auditee_name = auditee_name
+  audit.sub_department = sub_department ?? null
+  await save()
+  res.json({ ok: true })
+})
+
 // Serveeri builditud frontend (SPA)
 app.use(express.static(path.join(__dirname, 'public')))
 app.get(/^(?!\/api).*/, (req, res) => {
@@ -180,3 +193,4 @@ app.get(/^(?!\/api).*/, (req, res) => {
 })
 
 app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+

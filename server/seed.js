@@ -29,7 +29,7 @@ function upsertUser(email, password, role) {
   }
 }
 
-// Admin võetakse ENV-ist ja kirjutatakse üle
+// Admin ENV
 const adminEmail = process.env.ADMIN_EMAIL || 'krister.saks@glamox.com'
 const adminPass  = process.env.ADMIN_PASSWORD || 'tipatapa86'
 upsertUser(adminEmail, adminPass, 'admin')
@@ -51,6 +51,15 @@ if (!db.data.questions.find(q => q.id === 'Q-001'))
     stds: ['9001'],
     guidance: 'Kontrolli huvipoolte registrit ja ülevaatuste protokolle.'
   })
+
+// --- UUS: ensure audit header fields ---
+db.data.audits = (db.data.audits || []).map(a => ({
+  ...a,
+  date: a.date || new Date().toISOString().slice(0,10),
+  auditor_name: a.auditor_name || '',
+  auditee_name: a.auditee_name || '',
+  sub_department: a.sub_department ?? null,
+}))
 
 await db.write()
 console.log('Seed done at', dbFile)
