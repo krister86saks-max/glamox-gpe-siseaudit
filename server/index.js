@@ -180,3 +180,67 @@ app.get(/^(?!\/api).*/, (req, res) => {
 })
 
 app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+// ⬇️ PANE IMPORTIDE ALLA (kui juba olemas, siis ära dubleeri)
+const express = require('express');
+const app = global.app || require('./app') || app; // ignoreeri, kui sul app on samas failis
+app.use(require('express').json());
+// === AUDIT HEADER: HELPERID + ATOMIC WRITE ===
+const fs = require('fs');
+const path = require('path');
+const DATA_PATH = path.join(__dirname, 'data.json');
+
+function readData() {
+  if (!fs.existsSync(DATA_PATH)) return { audits: [] };
+  try {
+    const raw = fs.readFileSync(DATA_PATH, 'utf8');
+    const json = JSON.parse(raw);
+    if (!json.audits) json.audits = [];
+    return json;
+  } catch (e) {
+    console.error('Failed to read data.json:', e);
+    return { audits: [] };
+  }
+}
+
+function writeDataAtomic(data) {
+  const tmp = DATA_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, DATA_PATH);
+}
+// === AUDIT HEADER: API ROUTE ===
+// Kuupäev *, auditeerija nimi *, auditeeritav *; alamosakond (valikuline)
+if (typeof app?.put === 'function') {
+  app.put('/api/audits/:auditId/header', (req, res) => {
+    try {
+      const { auditId } = req.params;
+      const { date, auditor_name, auditee_name, sub_department } = req.body || {};
+
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new Error('Kuupäev (YYYY-MM-DD) on kohustuslik');
+      }
+      if (!auditor_name) throw new Error('Auditeerija nimi on kohustuslik');
+      if (!auditee_name) throw new Error('Auditeeritav on kohustuslik');
+
+      const data = readData();
+
+      // leia audit olem/VÕI LOO miinimumkirje, et oleks olemas
+      let audit = data.audits.find(a => String(a.id) === String(auditId));
+      if (!audit) {
+        audit = { id: auditId };
+        data.audits.push(audit);
+      }
+
+      audit.date = date;
+      audit.auditor_name = String(auditor_name).trim();
+      audit.auditee_name = String(auditee_name).trim();
+      audit.sub_department = (sub_department ?? '').toString().trim() || null;
+
+      writeDataAtomic(data);
+      res.json(audit);
+    } catch (e) {
+      res.status(400).json({ message: e.message || 'Invalid payload' });
+    }
+  });
+} else {
+  console.warn('Express app not found when registering /api/audits/:auditId/header');
+}
