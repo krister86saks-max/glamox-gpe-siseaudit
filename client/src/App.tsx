@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from 'react'
 
 type Std = '9001' | '14001' | '45001'
@@ -182,11 +181,58 @@ export default function App() {
                 </div>
                 <div className="mt-2">{q.text}</div>
                 {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
-                <div className="mt-2 flex gap-2 flex-wrap">
-                  <Toggle label="Vastab standardile" active={!!a.vs} color="green" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, vs: !(cur.vs)} }; return {...p, [q.id]: {...cur, vs: !(cur.vs)} } })} />
-                  <Toggle label="Parendusettepanek" active={!!a.pe} color="blue" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, pe: !(cur.pe)} }; return {...p, [q.id]: {...cur, pe: !(cur.pe)} } })} />
-                  <Toggle label="Mittevastavus" active={!!a.mv} color="red" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; return {...p, [q.id]: {...cur, mv: !(cur.mv), vs: false, pe:false } } })} />
+
+                {/* --- STAATUS (VS / PE / MV) CHECKBOXID --- */}
+                <div className="mt-2 flex gap-3 flex-wrap items-center">
+                  <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={!!a.vs}
+                      onChange={() =>
+                        setAnswers(p => {
+                          const cur = p[q.id] || {}
+                          const next = { ...cur, vs: !cur.vs }
+                          if (next.vs) next.mv = false // VS sisse -> MV maha
+                          return { ...p, [q.id]: next }
+                        })
+                      }
+                    />
+                    Vastab standardile
+                  </label>
+
+                  <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={!!a.pe}
+                      onChange={() =>
+                        setAnswers(p => {
+                          const cur = p[q.id] || {}
+                          const next = { ...cur, pe: !cur.pe }
+                          if (next.pe) next.mv = false // PE sisse -> MV maha
+                          return { ...p, [q.id]: next }
+                        })
+                      }
+                    />
+                    Parendusettepanek
+                  </label>
+
+                  <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={!!a.mv}
+                      onChange={() =>
+                        setAnswers(p => {
+                          const cur = p[q.id] || {}
+                          const next = { ...cur, mv: !cur.mv }
+                          if (next.mv) { next.vs = false; next.pe = false } // MV sisse -> VS/PE maha
+                          return { ...p, [q.id]: next }
+                        })
+                      }
+                    />
+                    Mittevastavus
+                  </label>
                 </div>
+
                 <div className="mt-2 grid md:grid-cols-3 gap-2">
                   <textarea className="border rounded px-2 py-1 md:col-span-2" placeholder="Tõendid" value={a.evidence || ''} onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], evidence:e.target.value}}))}/>
                   <input id={'note-' + q.id} className={'border rounded px-2 py-1 ' + (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')} placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'} value={a.note || ''} onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], note:e.target.value}}))}/>
@@ -201,15 +247,6 @@ export default function App() {
       )}
     </div>
   )
-}
-
-function Toggle({ label, active, onClick, color }: { label: string; active: boolean; onClick: ()=>void; color: 'green'|'red'|'blue' }) {
-  const colors: any = {
-    green: active ? 'bg-green-600 text-white border-green-700' : 'border-green-600 text-green-700',
-    red: active ? 'bg-red-600 text-white border-red-700' : 'border-red-600 text-red-700',
-    blue: active ? 'bg-blue-600 text-white border-blue-700' : 'border-blue-600 text-blue-700',
-  }
-  return <button className={'px-3 py-1 rounded border ' + colors[color]} onClick={onClick}>{label}</button>
 }
 
 function Excl({ color, title }: { color: 'red'|'blue'; title: string }) {
