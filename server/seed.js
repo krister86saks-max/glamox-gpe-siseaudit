@@ -54,3 +54,38 @@ if (!db.data.questions.find(q => q.id === 'Q-001'))
 
 await db.write()
 console.log('Seed done at', dbFile)
+// === ENSURE AUDIT HEADER FIELDS IN SEED ===
+const fs = require('fs');
+const path = require('path');
+const DATA_PATH = path.join(__dirname, 'data.json');
+
+function readDataSeed() {
+  if (!fs.existsSync(DATA_PATH)) return { audits: [] };
+  try {
+    return JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+  } catch {
+    return { audits: [] };
+  }
+}
+function writeDataSeed(data) {
+  fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2));
+}
+
+function ensureAuditHeaders() {
+  const data = readDataSeed();
+  data.audits = (data.audits || []).map(a => ({
+    ...a,
+    date: a.date || new Date().toISOString().slice(0,10),
+    auditor_name: a.auditor_name || '',
+    auditee_name: a.auditee_name || '',
+    sub_department: a.sub_department ?? null,
+  }));
+  writeDataSeed(data);
+  console.log('Seed: ensured audit header fields');
+}
+
+if (require.main === module) {
+  try { ensureAuditHeaders(); } catch (e) { console.error(e); process.exitCode = 1; }
+}
+
+module.exports = { ensureAuditHeaders };
