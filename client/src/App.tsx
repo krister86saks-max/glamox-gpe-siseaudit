@@ -108,8 +108,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* --- UUS: Auditi päise vorm --- */}
-      {/* NB! Hetkel test-ID. Kui lood auditi POST /api/audits-ga, kasuta tagastatud audit_id väärtust. */}
+      {/* Päise vorm (testiks ID=1; pane siia päris audit_id, kui lood auditi) */}
       <AuditorHeader auditId="1" />
 
       {/* Põhisisu */}
@@ -150,43 +149,6 @@ export default function App() {
               <label className="block text-xs font-semibold">Otsi</label>
               <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="küsimus, klausel..." />
             </div>
-
-            {role === 'admin' && (
-              <div className="p-3 border rounded space-y-3">
-                <div className="font-semibold">Redigeerimine</div>
-
-                <div>
-                  <div className="text-xs">Osakond</div>
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e=>setDepEdit({...depEdit, id:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e=>setDepEdit({...depEdit, name:e.target.value})} />
-                  <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments/'+depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={()=>del('/api/departments/'+depEdit.id)}>Kustuta</button>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e=>setQEdit({...qEdit, department_id:e.target.value})} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e=>setQEdit({...qEdit, stds:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e=>setQEdit({...qEdit, guidance:e.target.value})} />
-                  <div className="space-x-2">
-                    {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
-                    ) : (
-                      <>
-                        <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Parem paneel */}
@@ -203,23 +165,36 @@ export default function App() {
                       {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                       {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                     </span>
-                    {role === 'admin' && (
-                      <span className="ml-2 space-x-2">
-                        <button className="text-xs px-2 py-0.5 border rounded" onClick={()=> startEditQuestion(q)}>Muuda</button>
-                        <button className="text-xs px-2 py-0.5 border rounded" onClick={()=> del('/api/questions/'+q.id)}>Kustuta</button>
-                      </span>
-                    )}
                   </div>
+
                   <div className="mt-2">{q.text}</div>
                   {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
-                  <div className="mt-2 flex gap-2 flex-wrap">
-                    <Toggle label="Vastab standardile" active={!!a.vs} color="green" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, vs: !(cur.vs)} }; return {...p, [q.id]: {...cur, vs: !(cur.vs)} } })} />
-                    <Toggle label="Parendusettepanek" active={!!a.pe} color="blue" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, pe: !(cur.pe)} }; return {...p, [q.id]: {...cur, pe: !(cur.pe)} } })} />
-                    <Toggle label="Mittevastavus" active={!!a.mv} color="red" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; return {...p, [q.id]: {...cur, mv: !(cur.mv), vs: false, pe:false } } })} />
-                  </div>
+
+                  {/* Märkus + Tõendid */}
                   <div className="mt-2 grid md:grid-cols-3 gap-2">
-                    <textarea className="border rounded px-2 py-1 md:col-span-2" placeholder="Tõendid" value={a.evidence || ''} onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], evidence:e.target.value}}))}/>
-                    <input id={'note-' + q.id} className={'border rounded px-2 py-1 ' + (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')} placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'} value={a.note || ''} onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], note:e.target.value}}))}/>
+                    <textarea
+                      id={'note-' + q.id}
+                      className={
+                        'border rounded px-2 py-1 md:col-span-2 h-auto min-h-[6rem] ' +
+                        (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
+                      }
+                      placeholder={((a.mv || a.pe) && !(a.note && a.note.trim()))
+                        ? 'Märkus: PE/MV (kohustuslik)'
+                        : 'Märkus: PE/MV'}
+                      value={a.note || ''}
+                      onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
+                      rows={3}
+                      style={{ resize: 'vertical' }}
+                    />
+
+                    <textarea
+                      className="border rounded px-2 py-1 h-auto min-h-[2.5rem]"
+                      placeholder="Tõendid"
+                      value={a.evidence || ''}
+                      onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
+                      rows={2}
+                      style={{ resize: 'vertical' }}
+                    />
                   </div>
                 </div>
               )
@@ -234,7 +209,7 @@ export default function App() {
   )
 }
 
-/* --- Allpool util/abikomponendid --- */
+/* --- Abikomponendid --- */
 
 function Toggle({ label, active, onClick, color }: { label: string; active: boolean; onClick: ()=>void; color: 'green'|'red'|'blue' }) {
   const colors: any = {
