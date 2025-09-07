@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import Logo from './components/Logo'
 import AuditorHeader from './components/AuditorHeader'
-import DepartmentSelect from './components/DepartmentSelect'
 import Summary, { SummaryItem } from './components/summary'
-import Login from './pages/Login'
 
 type Verdict = 'VS' | 'PE' | 'MV' | null
 type Question = {
@@ -31,7 +28,7 @@ function AutoResizeTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElem
       el.style.height = el.scrollHeight + 'px'
     }
   }, [props.value])
-  return <textarea {...props} ref={ref} onInput={onInput} className={'w-full border rounded p-2 resize-none ' + (props.className ?? '')} rows={1} />
+  return <textarea {...props} ref={ref} onInput={onInput} className={'w-full border rounded p-2 leading-snug resize-none ' + (props.className ?? '')} rows={1} />
 }
 
 async function fetchQuestionsMock(): Promise<Question[]> {
@@ -43,10 +40,8 @@ async function fetchQuestionsMock(): Promise<Question[]> {
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(() => !!sessionStorage.getItem('token'))
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(true)
-  const [department, setDepartment] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -63,6 +58,7 @@ export default function App() {
     return () => { mounted = false }
   }, [])
 
+  // localStorage persist (nii oli "heas seisus")
   useEffect(() => {
     const raw = localStorage.getItem('audit-questions')
     if (raw) {
@@ -87,39 +83,23 @@ export default function App() {
   }
 
   const summaryMV: SummaryItem[] = useMemo(
-    () => questions.filter((q) => q.verdict === 'MV').map((q) => ({ id: q.id, text: q.text, note: q.note || '', clause: q.clause })),
+    () => questions.filter((q) => q.verdict === 'MV').map((q) => ({ id: q.id, text: q.text, note: q.note || '' })),
     [questions]
   )
   const summaryPE: SummaryItem[] = useMemo(
-    () => questions.filter((q) => q.verdict === 'PE').map((q) => ({ id: q.id, text: q.text, note: q.note || '', clause: q.clause })),
+    () => questions.filter((q) => q.verdict === 'PE').map((q) => ({ id: q.id, text: q.text, note: q.note || '' })),
     [questions]
   )
 
-  if (!authed) {
-    return <Login onLoggedIn={() => setAuthed(true)} />
-  }
-
   return (
-    <div className="p-4 space-y-6">
-      <div className="flex items-center justify-between">
-        <Logo />
-        <button
-          className="text-sm underline"
-          onClick={() => { sessionStorage.removeItem('token'); setAuthed(false); }}
-        >
-          Logi välja
-        </button>
-      </div>
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Glamox GPE Siseaudit</h1>
 
       <AuditorHeader auditId="draft" />
 
-      <div className="border rounded bg-white/40 p-4">
-        <div className="font-semibold mb-2">Osakond</div>
-        <DepartmentSelect value={department} onChange={setDepartment} />
-      </div>
-
-      <div className="border rounded bg-white/40">
+      <div className="mt-6 border rounded bg-white/40">
         <div className="px-4 py-3 border-b font-semibold">Küsimused</div>
+
         {loading ? (
           <div className="p-4 text-sm text-gray-600">Laen...</div>
         ) : questions.length === 0 ? (
@@ -131,11 +111,12 @@ export default function App() {
                 <div className="flex flex-wrap items-start gap-2">
                   <span className="text-xs px-2 py-0.5 rounded border font-mono">{q.id}</span>
                   {q.clause ? <span className="text-xs px-2 py-0.5 rounded border">Standardi nõue: {q.clause}</span> : null}
-                  <span className="text-xs px-2 py-0.5 rounded border">{department || q.department || '—'}</span>
+                  {q.department ? <span className="text-xs px-2 py-0.5 rounded border">{q.department}</span> : null}
                 </div>
 
                 <div className="mt-1">{q.text}</div>
 
+                {/* VS / PE / MV */}
                 <div className="mt-2 flex items-center gap-4">
                   <label className="inline-flex items-center gap-1 cursor-pointer">
                     <input type="checkbox" checked={q.verdict === 'VS'} onChange={() => setVerdict(q.id, q.verdict === 'VS' ? null : 'VS')} />
@@ -151,14 +132,15 @@ export default function App() {
                   </label>
                 </div>
 
+                {/* Märkus / Tõendid */}
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   <div>
                     <div className="text-xs text-gray-600 mb-1">Märkus</div>
-                    <AutoResizeTextarea value={q.note ?? ''} onChange={(e) => setNote(q.id, e.target.value)} placeholder="Lisa märkus..." />
+                    <AutoResizeTextarea placeholder="Lisa märkus..." value={q.note ?? ''} onChange={(e) => setNote(q.id, e.target.value)} />
                   </div>
                   <div>
                     <div className="text-xs text-gray-600 mb-1">Tõendid</div>
-                    <AutoResizeTextarea value={q.evidence ?? ''} onChange={(e) => setEvidence(q.id, e.target.value)} placeholder="Lisa tõendid..." />
+                    <AutoResizeTextarea placeholder="Lisa tõendid..." value={q.evidence ?? ''} onChange={(e) => setEvidence(q.id, e.target.value)} />
                   </div>
                 </div>
               </li>
@@ -167,6 +149,7 @@ export default function App() {
         )}
       </div>
 
+      {/* Kokkuvõte */}
       <Summary mv={summaryMV} pe={summaryPE} />
     </div>
   )
