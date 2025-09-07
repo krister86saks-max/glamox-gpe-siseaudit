@@ -13,18 +13,19 @@ import { fileURLToPath } from 'url'
 import fs from 'fs'
 
 const app = express()
+const PORT = process.env.PORT || 4000
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
+
+// --- middleware ---
 app.use(express.json())
 app.use(helmet())
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }))
 app.use(cors())
 
-const PORT = process.env.PORT || 4000
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
-
 // __dirname (ESM)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// LowDB setup
+// --- LowDB setup ---
 const dataDir = process.env.DATA_DIR || '/tmp'
 fs.mkdirSync(dataDir, { recursive: true })
 const dbFile = path.join(dataDir, 'data.json')
@@ -49,26 +50,44 @@ function authRequired(req, res, next) {
 function requireRole(role) {
   return (req, res, next) => {
     const roles = Array.isArray(role) ? role : [role]
-    if (!req.user || !roles.includes(req.user.role)) return res.status(403).json({ error: 'forbidden' })
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'forbidden' })
+    }
     next()
   }
 }
 
-// --- ROUTES ---
+// --- Healthcheck (Renderile kasulik) ---
+app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
-// Login
-app.post('/auth/login', async (req, res) => {
+// --- LOGIN ---
+// Säilitame sinu loogika (users LowDB-s bcrypt hashiga), aga eksponeerime
+// nii /api/admin/login kui /api/login (alias), et front ei jookseks 404/405 sisse.
+async function handleLogin(req, res) {
   const { email, password } = req.body || {}
   const user = db.data.users.find(u => u.email === email)
   if (!user) return res.status(401).json({ error: 'invalid credentials' })
-  if (!bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'invalid credentials' })
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '6h' })
+  if (!bcrypt.compareSync(password, user.password_hash)) {
+    return res.status(401).json({ error: 'invalid credentials' })
+  }
+  const token = jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '6h' }
+  )
   res.json({ token, role: user.role, email: user.email })
-})
+}
 
-// Avalik skeem
+// sinu endine tee (säilitame tagurpidi ühilduvuse jaoks)
+app.post('/auth/login', handleLogin)
+// UI ootab pigem neid:
+app.post('/api/admin/login', handleLogin)
+app.post('/api/login', handleLogin)
+
+// --- Avalik skeem ---
 app.get('/api/schema', (req, res) => {
-  const deps = db.data.departments, questions = db.data.questions
+  const deps = db.data.departments
+  const questions = db.data.questions
   const schema = {
     meta: { version: 'glx-gpe-render', org: '(server)' },
     departments: deps.map(d => ({
@@ -89,7 +108,7 @@ app.get('/api/schema', (req, res) => {
   res.json(schema)
 })
 
-// Osakonnad (CRUD)
+// --- Osakonnad (CRUD) ---
 app.post('/api/departments', authRequired, requireRole('admin'), async (req, res) => {
   const { id, name } = req.body || {}
   if (!id || !name) return res.status(400).json({ error: 'id and name required' })
@@ -112,7 +131,7 @@ app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (re
   res.json({ ok: true })
 })
 
-// Küsimused (CRUD)
+// --- Küsimused (CRUD) ---
 app.post('/api/questions', authRequired, requireRole('admin'), async (req, res) => {
   const { id, department_id, text, clause, stds, guidance, tags } = req.body || {}
   if (!id || !department_id || !text || !stds) {
@@ -148,7 +167,7 @@ app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req,
   res.json({ ok: true })
 })
 
-// Auditi salvestus/vaatamine
+// --- Auditid ---
 app.post('/api/audits', authRequired, requireRole(['admin', 'auditor']), async (req, res) => {
   const { org, department_id, standards, answers } = req.body || {}
   const id = (db.data.audits.at(-1)?.id || 0) + 1
@@ -169,13 +188,13 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin', 'auditor', 'exter
   const ans = db.data.answers.filter(x => x.audit_id === a.id)
   res.json({ audit: a, answers: ans })
 })
-
-// --- UUS ROUTE: auditi päise uuendamine ---
 app.put('/api/audits/:id/header', authRequired, requireRole(['admin', 'auditor']), async (req, res) => {
   const audit = db.data.audits.find(x => x.id === Number(req.params.id))
   if (!audit) return res.status(404).json({ error: 'not found' })
   const { date, auditor_name, auditee_name, sub_department } = req.body || {}
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Kuupäev (YYYY-MM-DD) on kohustuslik' })
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: 'Kuupäev (YYYY-MM-DD) on kohustuslik' })
+  }
   if (!auditor_name) return res.status(400).json({ error: 'Auditeerija nimi on kohustuslik' })
   if (!auditee_name) return res.status(400).json({ error: 'Auditeeritav on kohustuslik' })
   audit.date = date
@@ -186,10 +205,18 @@ app.put('/api/audits/:id/header', authRequired, requireRole(['admin', 'auditor']
   res.json({ ok: true })
 })
 
-// Serveeri builditud frontend (SPA)
-app.use(express.static(path.join(__dirname, 'public')))
-app.get(/^(?!\/api).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'))
-})
+// --- Serveeri Vite build (client/dist) ---
+const clientDist = path.join(__dirname, '..', 'client', 'dist')
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist))
+  // Kõik mitte-API teed -> index.html (SPA)
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'))
+  })
+} else {
+  console.warn('Client dist not found. Did you run "cd client && npm run build"?')
+}
 
-app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+app.listen(PORT, () => {
+  console.log(`Server listening on :${PORT}`)
+})
