@@ -3,14 +3,18 @@ import AuditorHeader from './components/AuditorHeader'
 import Summary, { SummaryItem } from './components/summary'
 
 export default function App() {
-  // TODO: siia lisa oma päris summaryMV ja summaryPE massiivid
+  // TODO: asenda need oma tegelike MV ja PE massiividega
   const summaryMV: SummaryItem[] = []
   const summaryPE: SummaryItem[] = []
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Glamox GPE Siseaudit</h1>
+    <div className="p-4 space-y-6">
+      <h1 className="text-2xl font-bold">Glamox GPE Siseaudit</h1>
+
+      {/* Audiitori päiseplokk */}
       <AuditorHeader auditId="draft" />
+
+      {/* Kokkuvõte mitte-vastavustest ja parendusettepanekutest */}
       <Summary mv={summaryMV} pe={summaryPE} />
     </div>
   )
