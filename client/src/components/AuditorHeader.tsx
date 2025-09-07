@@ -1,71 +1,112 @@
-import React, { useState } from 'react'
+import React, { useState } from 'react';
 
-type AuditorHeaderProps = {
-  auditId: string
+interface Props {
+  auditId: string;
+  initial?: {
+    date?: string;
+    auditor_name?: string;
+    auditee_name?: string;
+    sub_department?: string | null;
+  };
+  onSaved?: () => void;
 }
 
-export default function AuditorHeader({ auditId }: AuditorHeaderProps) {
-  const [auditor, setAuditor] = useState('')
-  const [auditee, setAuditee] = useState('')
-  const [date, setDate] = useState('')
-  const [message, setMessage] = useState<string | null>(null)
+export default function AuditorHeader({ auditId, initial, onSaved }: Props) {
+  const [date, setDate] = useState(initial?.date ?? new Date().toISOString().slice(0, 10));
+  const [auditorName, setAuditorName] = useState(initial?.auditor_name ?? '');
+  const [auditeeName, setAuditeeName] = useState(initial?.auditee_name ?? '');
+  const [subDept, setSubDept] = useState(initial?.sub_department ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
 
-  async function saveHeader() {
+  async function save() {
+    setSaving(true);
+    setError(null);
+    setOk(false);
     try {
-      const token = sessionStorage.getItem('token')
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
       const res = await fetch(`/api/audits/${auditId}/header`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ auditor, auditee, date }),
-      })
+        body: JSON.stringify({
+          date,
+          auditor_name: auditorName.trim(),
+          auditee_name: auditeeName.trim(),
+          sub_department: subDept.trim() || undefined,
+        }),
+      });
       if (!res.ok) {
-        throw new Error(await res.text())
+        const j = await res.json().catch(() => ({} as any));
+        throw new Error((j.error || j.message) ?? 'Salvestamine ebaõnnestus');
       }
-      setMessage('Salvestatud!')
-      setTimeout(() => setMessage(null), 3000)
-    } catch (err: any) {
-      setMessage('Viga: ' + err.message)
-      setTimeout(() => setMessage(null), 5000)
+      setOk(true);
+      onSaved?.();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
     }
   }
 
+  const canSave = Boolean(date && auditorName.trim() && auditeeName.trim());
+
   return (
-    <div className="mb-6 p-4 border rounded bg-white/40">
-      <h2 className="text-lg font-semibold mb-2">Audiitori info</h2>
-      <div className="flex flex-col gap-2">
-        <input
-          type="text"
-          className="border p-1 rounded"
-          placeholder="Audiitor"
-          value={auditor}
-          onChange={(e) => setAuditor(e.target.value)}
-        />
-        <input
-          type="text"
-          className="border p-1 rounded"
-          placeholder="Auditeeritav"
-          value={auditee}
-          onChange={(e) => setAuditee(e.target.value)}
-        />
+    <div className="grid gap-4 p-4 rounded-2xl shadow">
+      <div className="grid gap-1">
+        <label className="text-sm">Kuupäev *</label>
         <input
           type="date"
-          className="border p-1 rounded"
           value={date}
           onChange={(e) => setDate(e.target.value)}
+          required
+          className="border p-2 rounded"
         />
-        <button
-          onClick={saveHeader}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-        >
-          Salvesta
-        </button>
-        {message && <div className="text-sm mt-1">{message}</div>}
       </div>
-    </div>
-  )
-}
 
+      <div className="grid gap-1">
+        <label className="text-sm">Auditeerija nimi *</label>
+        <input
+          value={auditorName}
+          onChange={(e) => setAuditorName(e.target.value)}
+          required
+          className="border p-2 rounded"
+        />
+      </div>
+
+      <div className="grid gap-1">
+        <label className="text-sm">Auditeeritav *</label>
+        <input
+          value={auditeeName}
+          onChange={(e) => setAuditeeName(e.target.value)}
+          required
+          className="border p-2 rounded"
+        />
+      </div>
+
+      <div className="grid gap-1">
+        <label className="text-sm">Alamosakond (valikuline)</label>
+        <input
+          value={subDept ?? ''}
+          onChange={(e) => setSubDept(e.target.value)}
+          className="border p-2 rounded"
+        />
+      </div>
+
+      {error && <div className="text-red-600 text-sm">{error}</div>}
+      {ok && <div className="text-green-700 text-sm">Päis salvestatud.</div>}
+
+      <button
+        onClick={save}
+        disabled={!canSave || saving}
+        className="px-4 py-2 rounded-2xl shadow"
+      >
+        {saving ? 'Salvestan…' : 'Salvesta päis'}
+      </button>
+    </div>
+  );
+}
 
