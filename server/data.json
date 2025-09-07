@@ -1,40 +1,39 @@
-// --- Auto-seed kui tühi ---
-if (db.data.departments.length === 0) {
-  db.data.departments.push(
-    { id: 'dep-too', name: 'Tööohutus' },
-    { id: 'dep-keskk', name: 'Keskkond' },
-    { id: 'dep-kval', name: 'Kvaliteet' }
-  )
-}
-if (db.data.questions.length === 0) {
-  db.data.questions.push(
+{
+  "users": [],
+  "departments": [
+    { "id": "dep-too", "name": "Tööohutus" },
+    { "id": "dep-keskk", "name": "Keskkond" },
+    { "id": "dep-kval", "name": "Kvaliteet" }
+  ],
+  "questions": [
     {
-      id: 'q-001',
-      department_id: 'dep-too',
-      text: 'Kas riskihindamine on ajakohastatud?',
-      clause: '6.1.2',
-      stds: ['ISO45001:6.1.2'],
-      guidance: null,
-      tags: ['tööohutus']
+      "id": "q-001",
+      "department_id": "dep-too",
+      "text": "Kas riskihindamine on ajakohastatud?",
+      "clause": "6.1.2",
+      "stds": ["ISO45001:6.1.2"],
+      "guidance": null,
+      "tags": ["tööohutus"]
     },
     {
-      id: 'q-002',
-      department_id: 'dep-keskk',
-      text: 'Kas keskkonnaaspektide register on üle vaadatud?',
-      clause: '6.1.2',
-      stds: ['ISO14001:6.1.2'],
-      guidance: null,
-      tags: ['keskkond']
+      "id": "q-002",
+      "department_id": "dep-keskk",
+      "text": "Kas keskkonnaaspektide register on üle vaadatud?",
+      "clause": "6.1.2",
+      "stds": ["ISO14001:6.1.2"],
+      "guidance": null,
+      "tags": ["keskkond"]
     },
     {
-      id: 'q-003',
-      department_id: 'dep-kval',
-      text: 'Kas kvaliteedieesmärgid on mõõdetavad?',
-      clause: '6.2',
-      stds: ['ISO9001:6.2'],
-      guidance: null,
-      tags: ['kvaliteet']
+      "id": "q-003",
+      "department_id": "dep-kval",
+      "text": "Kas kvaliteedieesmärgid on mõõdetavad?",
+      "clause": "6.2",
+      "stds": ["ISO9001:6.2"],
+      "guidance": null,
+      "tags": ["kvaliteet"]
     }
-  )
+  ],
+  "audits": [],
+  "answers": []
 }
-await db.write()
