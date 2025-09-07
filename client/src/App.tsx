@@ -19,10 +19,6 @@ export default function App() {
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
   const [query, setQuery] = useState('')
 
-  const [qEdit, setQEdit] = useState<{mode:'add'|'edit', id:string, department_id:string, text:string, clause:string, stds:string, guidance:string}>(
-    {mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''})
-  const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
-
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
     setSchema(s)
@@ -67,91 +63,52 @@ export default function App() {
     else alert(j.error || 'Salvestus ebaõnnestus')
   }
 
-  async function post(url: string, body: any, method='POST') {
-    const r = await fetch(API + url, { method, headers: { 'Content-Type':'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) })
-    const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
-  }
-  async function del(url: string) {
-    const r = await fetch(API + url, { method:'DELETE', headers: { Authorization: 'Bearer ' + token } })
-    const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
-  }
-
-  function startEditQuestion(q: Question) {
-    setQEdit({ mode:'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
-  }
-
   return (
     <div className="max-w-6xl mx-auto p-4">
-      {/* Ülaosa */}
       <header className="flex items-center gap-3 mb-4">
         <img src="/logo.webp" className="h-8" alt="Glamox" />
         <h1 className="text-2xl font-bold">Glamox GPE Siseaudit</h1>
-
         <div className="ml-auto flex items-center gap-2">
           {!token ? (
-            <LoginForm
-              defaultEmail="krister.saks@glamox.com"
-              defaultPass="tipatapa86"
-              onLogin={login}
-            />
+            <LoginForm defaultEmail="krister.saks@glamox.com" defaultPass="tipatapa86" onLogin={login} />
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
-              <button
-                className="px-2 py-1 border rounded"
-                onClick={() => { setToken(null); setRole(null); }}
-              >
-                Logi välja
-              </button>
+              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
             </div>
           )}
         </div>
       </header>
 
-      {/* Päise vorm (testiks ID=1; pane siia päris audit_id, kui lood auditi) */}
       <AuditorHeader auditId="1" />
 
-      {/* Põhisisu */}
-      {!schema ? (
-        <div>Laen skeemi...</div>
-      ) : (
+      {!schema ? <div>Laen skeemi...</div> : (
         <div className="grid md:grid-cols-4 gap-4">
-          {/* Vasak paneel */}
           <div className="space-y-3">
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Ettevõtte nimi</label>
               <input className="w-full border rounded px-2 py-1" value={orgName} onChange={e => setOrgName(e.target.value)} />
             </div>
-
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Osakond</label>
               <select className="w-full border rounded px-2 py-1" value={deptId} onChange={e => setDeptId(e.target.value)}>
                 {schema.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
-
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Standard</label>
               <div className="flex gap-2 flex-wrap mt-1">
                 {(['9001','14001','45001'] as Std[]).map(s => (
-                  <button
-                    key={s}
-                    className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')}
-                    onClick={() => setStds(prev => prev.includes(s)? prev.filter(x => x!==s) : [...prev,s])}
-                  >
-                    ISO {s}
-                  </button>
+                  <button key={s} className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')} onClick={() => setStds(prev => prev.includes(s)? prev.filter(x => x!==s) : [...prev,s])}>ISO {s}</button>
                 ))}
               </div>
             </div>
-
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Otsi</label>
               <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="küsimus, klausel..." />
             </div>
           </div>
 
-          {/* Parem paneel */}
           <div className="md:col-span-3 space-y-3">
             {!dept ? <div>Vali osakond</div> : visible.map((q) => {
               const a = answers[q.id] || {}
@@ -160,40 +117,37 @@ export default function App() {
                   <div className="flex items-start gap-2">
                     <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
                     {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
-                    <span className="ml-auto flex items-center gap-1">
-                      {a.mv && <Excl color="red" title="Mittevastavus" />}
-                      {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
-                      {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
-                    </span>
                   </div>
-
                   <div className="mt-2">{q.text}</div>
                   {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
+
+                  {/* Nupud */}
+                  <div className="mt-2 flex gap-2 flex-wrap">
+                    <Toggle label="Vastab standardile" active={!!a.vs} color="green" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, vs: !(cur.vs)} }; return {...p, [q.id]: {...cur, vs: !(cur.vs)} } })} />
+                    <Toggle label="Parendusettepanek" active={!!a.pe} color="blue" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; if (cur.mv) return {...p, [q.id]: {...cur, mv:false, pe: !(cur.pe)} }; return {...p, [q.id]: {...cur, pe: !(cur.pe)} } })} />
+                    <Toggle label="Mittevastavus" active={!!a.mv} color="red" onClick={()=> setAnswers(p=>{ const cur = p[q.id]||{}; return {...p, [q.id]: {...cur, mv: !(cur.mv), vs: false, pe:false } } })} />
+                  </div>
 
                   {/* Märkus + Tõendid */}
                   <div className="mt-2 grid md:grid-cols-3 gap-2">
                     <textarea
                       id={'note-' + q.id}
-                      className={
-                        'border rounded px-2 py-1 md:col-span-2 h-auto min-h-[6rem] ' +
-                        (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
-                      }
-                      placeholder={((a.mv || a.pe) && !(a.note && a.note.trim()))
-                        ? 'Märkus: PE/MV (kohustuslik)'
-                        : 'Märkus: PE/MV'}
+                      className={'border rounded px-2 py-1 md:col-span-2 h-auto min-h-[6rem]'}
+                      placeholder="Märkus: PE/MV"
                       value={a.note || ''}
-                      onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
+                      onChange={e => setAnswers(p=>({...p, [q.id]: {...p[q.id], note:e.target.value}}))}
                       rows={3}
-                      style={{ resize: 'vertical' }}
+                      style={{ resize: 'vertical', overflow: 'hidden' }}
+                      onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
                     />
-
                     <textarea
                       className="border rounded px-2 py-1 h-auto min-h-[2.5rem]"
                       placeholder="Tõendid"
                       value={a.evidence || ''}
-                      onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
+                      onChange={e => setAnswers(p=>({...p, [q.id]: {...p[q.id], evidence:e.target.value}}))}
                       rows={2}
-                      style={{ resize: 'vertical' }}
+                      style={{ resize: 'vertical', overflow: 'hidden' }}
+                      onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
                     />
                   </div>
                 </div>
@@ -208,8 +162,6 @@ export default function App() {
     </div>
   )
 }
-
-/* --- Abikomponendid --- */
 
 function Toggle({ label, active, onClick, color }: { label: string; active: boolean; onClick: ()=>void; color: 'green'|'red'|'blue' }) {
   const colors: any = {
@@ -252,4 +204,5 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
