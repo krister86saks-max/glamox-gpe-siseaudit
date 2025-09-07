@@ -1,37 +1,40 @@
 {
-  "users": [],
+  "users": [
+    {
+      "id": 1,
+      "email": "krister.saks@glamox.com",
+      "password_hash": "$2a$10$TFAGDVV6qZUCKu8hCKb2Nuw38fLabnDl1PKB1Aja4atespKAY30/i",
+      "role": "admin"
+    },
+    {
+      "id": 2,
+      "email": "auditor@example.com",
+      "password_hash": "$2a$10$wdotHae.Q2jD0Bb354KKSeDb9aDX3qmcU0kXlSYobcUQIgUoVrIa.",
+      "role": "auditor"
+    },
+    {
+      "id": 3,
+      "email": "external@example.com",
+      "password_hash": "$2a$10$4XDjNGE6ax5TUZzjfcpur.s5MGbtYJ1n8hedPMy2tsHCQxig/TyLa",
+      "role": "external"
+    }
+  ],
   "departments": [
-    { "id": "dep-too", "name": "Tööohutus" },
-    { "id": "dep-keskk", "name": "Keskkond" },
-    { "id": "dep-kval", "name": "Kvaliteet" }
+    {
+      "id": "ostmine",
+      "name": "Ostmine"
+    }
   ],
   "questions": [
     {
-      "id": "q-001",
-      "department_id": "dep-too",
-      "text": "Kas riskihindamine on ajakohastatud?",
-      "clause": "6.1.2",
-      "stds": ["ISO45001:6.1.2"],
-      "guidance": null,
-      "tags": ["tööohutus"]
-    },
-    {
-      "id": "q-002",
-      "department_id": "dep-keskk",
-      "text": "Kas keskkonnaaspektide register on üle vaadatud?",
-      "clause": "6.1.2",
-      "stds": ["ISO14001:6.1.2"],
-      "guidance": null,
-      "tags": ["keskkond"]
-    },
-    {
-      "id": "q-003",
-      "department_id": "dep-kval",
-      "text": "Kas kvaliteedieesmärgid on mõõdetavad?",
-      "clause": "6.2",
-      "stds": ["ISO9001:6.2"],
-      "guidance": null,
-      "tags": ["kvaliteet"]
+      "id": "Q-001",
+      "department_id": "ostmine",
+      "text": "Kas huvipooled ja nende nõuded on määratletud ning üle vaadatud?",
+      "clause": "ISO 9001:2015 – 4.2",
+      "stds": [
+        "9001"
+      ],
+      "guidance": "Kontrolli huvipoolte registrit ja ülevaatuste protokolle."
     }
   ],
   "audits": [],
