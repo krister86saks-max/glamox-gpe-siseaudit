@@ -25,7 +25,7 @@ export default function Summary({ mv = [], pe = [] }: { mv?: SummaryItem[]; pe?:
           items={mv}
           icon={
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
             </svg>
           }
         />
@@ -38,7 +38,7 @@ export default function Summary({ mv = [], pe = [] }: { mv?: SummaryItem[]; pe?:
           items={pe}
           icon={
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
             </svg>
           }
         />
@@ -70,7 +70,9 @@ function Section({
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono">{item.id}</span>
               {item.clause ? (
-                <span className="text-xs border rounded px-2 py-0.5">Standardi nõue: {item.clause}</span>
+                <span className="text-xs border rounded px-2 py-0.5">
+                  Standardi nõue: {item.clause}
+                </span>
               ) : null}
             </div>
             <div className="mt-0.5">{item.text}</div>
@@ -83,3 +85,4 @@ function Section({
     </div>
   )
 }
+
