@@ -50,7 +50,7 @@ export default function App() {
     const bad = Object.entries(answers).find(([ , a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
     if (bad) {
       const id = bad[0]
-      alert(`Küsimusel ${id} on PE või MV — palun täida "Märkus: PE/MV".`)
+      alert(`KÃ¼simusel ${id} on PE vÃµi MV â€” palun tÃ¤ida "MÃ¤rkus: PE/MV".`)
       setTimeout(() => document.getElementById('note-' + id)?.focus(), 0)
       return
     }
@@ -63,7 +63,7 @@ export default function App() {
     const r = await fetch(API + '/api/audits', { method: 'POST', headers: { 'Content-Type':'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(payload) })
     const j = await r.json()
     if (r.ok) alert('Audit salvestatud. ID: ' + j.audit_id)
-    else alert(j.error || 'Salvestus ebaõnnestus')
+    else alert(j.error || 'Salvestus ebaÃµnnestus')
   }
 
   async function post(url: string, body: any, method='POST') {
@@ -79,7 +79,7 @@ export default function App() {
     setQEdit({ mode:'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
   }
 
-  // --- teeb textarea'd sisuga automaatselt kõrgemaks (ülapiir 800px) ---
+  // --- teeb textarea'd sisuga automaatselt kÃµrgemaks (Ã¼lapiir 800px) ---
   function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
     const el = e.currentTarget
     el.style.height = 'auto'
@@ -97,7 +97,7 @@ export default function App() {
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
-              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
+              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi vÃ¤lja</button>
             </div>
           )}
         </div>
@@ -107,7 +107,7 @@ export default function App() {
         <div className="grid md:grid-cols-4 gap-4">
           <div className="space-y-3">
             <div className="p-3 border rounded">
-              <label className="block text-xs font-semibold">Ettevõtte nimi</label>
+              <label className="block text-xs font-semibold">EttevÃµtte nimi</label>
               <input className="w-full border rounded px-2 py-1" value={orgName} onChange={e => setOrgName(e.target.value)} />
             </div>
             <div className="p-3 border rounded">
@@ -126,7 +126,7 @@ export default function App() {
             </div>
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Otsi</label>
-              <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="küsimus, klausel..." />
+              <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="kÃ¼simus, klausel..." />
             </div>
 
             {role === 'admin' && (
@@ -144,20 +144,20 @@ export default function App() {
                 </div>
 
                 <div>
-                  <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
+                  <div className="text-xs">KÃ¼simus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="kÃ¼simuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e=>setQEdit({...qEdit, department_id:e.target.value})} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
+                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="kÃ¼simuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nÃµue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e=>setQEdit({...qEdit, stds:e.target.value})} />
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e=>setQEdit({...qEdit, guidance:e.target.value})} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa kÃ¼simus</button>
                     ) : (
                       <>
                         <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>TÃ¼hista</button>
                       </>
                     )}
                   </div>
@@ -173,7 +173,7 @@ export default function App() {
               <div key={q.id} className="p-3 border rounded">
                 <div className="flex items-start gap-2">
                   <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
-                  {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
+                  {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nÃµue: {q.clause}</span>}
                   <span className="ml-auto flex items-center gap-1">
                     {a.mv && <Excl color="red" title="Mittevastavus" />}
                     {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
@@ -240,12 +240,12 @@ export default function App() {
                   </label>
                 </div>
 
-                {/* --- Tõendid / Märkus: laiused vahetuses, 3× kõrgem, auto-grow --- */}
+                {/* --- TÃµendid / MÃ¤rkus: laiused vahetuses, 3Ã— kÃµrgem, auto-grow --- */}
                 <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
-                  {/* Tõendid — 1/3 lai, min-h-32, kasvab sisuga */}
+                  {/* TÃµendid â€” 1/3 lai, min-h-32, kasvab sisuga */}
                   <textarea
                     className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y"
-                    placeholder="Tõendid"
+                    placeholder="TÃµendid"
                     value={a.evidence || ''}
                     onInput={autoResize}
                     onChange={e =>
@@ -253,7 +253,7 @@ export default function App() {
                     }
                   />
 
-                  {/* Märkus — 2/3 lai, min-h-32, nõude korral punane raam, kasvab sisuga */}
+                  {/* MÃ¤rkus â€” 2/3 lai, min-h-32, nÃµude korral punane raam, kasvab sisuga */}
                   <textarea
                     id={'note-' + q.id}
                     className={
@@ -262,8 +262,8 @@ export default function App() {
                     }
                     placeholder={
                       ((a.mv || a.pe) && !(a.note && a.note.trim()))
-                        ? 'Märkus: PE/MV (kohustuslik)'
-                        : 'Märkus: PE/MV'
+                        ? 'MÃ¤rkus: PE/MV (kohustuslik)'
+                        : 'MÃ¤rkus: PE/MV'
                     }
                     value={a.note || ''}
                     onInput={autoResize}
