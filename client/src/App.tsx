@@ -140,12 +140,27 @@ export default function App() {
     el.style.height = Math.min(el.scrollHeight, 800) + 'px'
   }
 
+  function handlePrint() {
+    window.print()
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-4">
+      {/* Väike print-CSS: peida .no-print asjad prindis */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
+          textarea { border: 1px solid #000 !important; }
+          select, input { border: 1px solid #000 !important; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
+
       <header className="flex items-center gap-3">
         <img src="/logo.webp" className="h-8" alt="Glamox" />
         <h1 className="text-2xl font-bold">Glamox GPE Siseaudit</h1>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 no-print">
           {!token ? (
             <LoginForm defaultEmail="krister.saks@glamox.com" defaultPass="tipatapa86" onLogin={login} />
           ) : (
@@ -198,7 +213,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="mt-3 flex justify-end">
+        <div className="mt-3 flex justify-end no-print">
           <button
             className="px-3 py-1 border rounded"
             disabled={!deptId}
@@ -212,7 +227,7 @@ export default function App() {
 
       {!schema ? <div>Laen skeemi...</div> : (
         <div className="grid md:grid-cols-4 gap-4">
-          <div className="space-y-3">
+          <div className="space-y-3 no-print">
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Standard</label>
               <div className="flex gap-2 flex-wrap mt-1">
@@ -283,7 +298,7 @@ export default function App() {
               visible.map((q) => {
                 const a = answers[q.id] || {}
                 return (
-                  <div key={q.id} className="p-3 border rounded">
+                  <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
                       {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
@@ -293,7 +308,7 @@ export default function App() {
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
                       {role === 'admin' && (
-                        <span className="ml-2 space-x-2">
+                        <span className="ml-2 space-x-2 no-print">
                           <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
                           <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
                         </span>
@@ -381,8 +396,9 @@ export default function App() {
                 )
               })
             )}
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2 no-print">
               <button className="px-4 py-2 rounded border" onClick={submitAudit}>Salvesta audit</button>
+              <button className="px-4 py-2 rounded border" onClick={handlePrint}>Salvesta PDF</button>
             </div>
           </div>
         </div>
@@ -423,5 +439,6 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
 
