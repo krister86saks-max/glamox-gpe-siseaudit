@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 
 type Std = '9001' | '14001' | '45001'
 type Question = { id: string; text: string; clause?: string; stds: Std[]; guidance?: string }
@@ -15,6 +15,9 @@ export default function App() {
 
   // osakond on vaikimisi tühi
   const [deptId, setDeptId] = useState<string>('')
+
+  // login vormi nähtavus
+  const [showLogin, setShowLogin] = useState(false)
 
   // küsimustiku avamise lipp
   const [questionsOpen, setQuestionsOpen] = useState(false)
@@ -60,7 +63,13 @@ export default function App() {
       body: JSON.stringify({ email, password })
     })
     const j = await r.json()
-    if (r.ok) { setToken(j.token); setRole(j.role) } else alert(j.error || 'login failed')
+    if (r.ok) {
+      setToken(j.token)
+      setRole(j.role)
+      setShowLogin(false) // peida vorm pärast edukat loginit
+    } else {
+      alert(j.error || 'login failed')
+    }
   }
 
   const dept = schema?.departments.find(d => d.id === deptId)
@@ -155,61 +164,6 @@ export default function App() {
     window.print()
   }
 
-  /* ---------------------- ADMIN: EXPORT / IMPORT ---------------------- */
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [importMode, setImportMode] = useState<'replace' | 'merge' | null>(null)
-
-  async function handleExport() {
-    try {
-      const r = await fetch(API + '/api/admin/export', {
-        headers: { Authorization: 'Bearer ' + token }
-      })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data?.error || 'Export failed')
-
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `schema-backup-${new Date().toISOString().slice(0, 10)}.json`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch (e: any) {
-      alert(e.message || 'Export error')
-    }
-  }
-
-  function triggerImport(mode: 'replace' | 'merge') {
-    setImportMode(mode)
-    fileInputRef.current?.click()
-  }
-
-  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = '' // reset
-    if (!file) return
-    try {
-      const text = await file.text()
-      const payload = JSON.parse(text)
-      const r = await fetch(API + '/api/admin/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({ ...payload, mode: importMode || 'merge' })
-      })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data?.error || 'Import failed')
-      alert('Skeem imporditud.')
-      await refreshSchema()
-    } catch (e: any) {
-      alert(e.message || 'Import error')
-    } finally {
-      setImportMode(null)
-    }
-  }
-  /* ------------------------------------------------------------------- */
-
   return (
     <div className="max-w-6xl mx-auto p-4">
       {/* Väike print-CSS: peida .no-print asjad prindis */}
@@ -226,11 +180,23 @@ export default function App() {
       <header className="flex items-center gap-3">
         <img src="/logo.webp" className="h-8" alt="Glamox" />
         <h1 className="text-2xl font-bold">Glamox GPE Siseaudit</h1>
-        <div className="ml-auto flex items-center gap-2 no-print">
+        <div className="ml-auto flex items-center gap-2">
           {!token ? (
-            <LoginForm defaultEmail="krister.saks@glamox.com" defaultPass="tipatapa86" onLogin={login} />
+            <div className="relative no-print">
+              <button
+                className="px-3 py-1 border rounded"
+                onClick={() => setShowLogin(v => !v)}
+              >
+                Login
+              </button>
+              {showLogin && (
+                <div className="absolute right-0 top-full mt-2 w-[320px] bg-white border rounded p-3 shadow-md z-10">
+                  <LoginForm onLogin={login} />
+                </div>
+              )}
+            </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 no-print">
               <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
               <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
             </div>
@@ -278,7 +244,6 @@ export default function App() {
             <input id="hdr-subdept" className="w-full border rounded px-2 py-1" placeholder="nt alamosakond" value={subDept} onChange={e => setSubDept(e.target.value)} />
           </div>
 
-          {/* Kohaldatavad standardid */}
           {dept && (
             <div className="md:col-span-2">
               <div className="block text-xs font-semibold">Kohaldatavad standardid</div>
@@ -363,24 +328,6 @@ export default function App() {
                     )}
                   </div>
                 </div>
-
-                {/* --- UUS: Varunda / Taasta skeem --- */}
-                <div className="pt-2 border-t">
-                  <div className="font-semibold mb-1">Varunda / Taasta skeem</div>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <button className="px-2 py-1 border rounded" onClick={handleExport}>Ekspordi skeem (JSON)</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => triggerImport('replace')}>Impordi (asenda)</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => triggerImport('merge')}>Impordi (lisa/uuenda)</button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="application/json"
-                      className="hidden"
-                      onChange={onPickFile}
-                    />
-                  </div>
-                </div>
-                {/* ----------------------------------- */}
               </div>
             )}
           </div>
@@ -402,7 +349,6 @@ export default function App() {
                     <div className="flex items-start gap-2 flex-wrap">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
 
-                      {/* standardimärgid küsimuse juures */}
                       {q.stds?.length > 0 && q.stds.map(s => (
                         <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
                       ))}
@@ -537,14 +483,22 @@ function Check({ color, title }: { color: 'green'; title: string }) {
   )
 }
 
-function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: string; defaultPass: string; onLogin: (e: string, p: string) => void }) {
+function LoginForm({
+  defaultEmail = '',
+  defaultPass = '',
+  onLogin
+}: {
+  defaultEmail?: string
+  defaultPass?: string
+  onLogin: (e: string, p: string) => void
+}) {
   const [email, setEmail] = useState(defaultEmail)
   const [pass, setPass] = useState(defaultPass)
   return (
-    <div className="flex items-center gap-2">
-      <input className="border rounded px-2 py-1" value={email} onChange={e => setEmail(e.target.value)} />
-      <input type="password" className="border rounded px-2 py-1" value={pass} onChange={e => setPass(e.target.value)} />
-      <button className="px-3 py-1 border rounded" onClick={() => onLogin(email, pass)}>Login</button>
+    <div className="flex flex-col gap-2">
+      <input className="border rounded px-2 py-1" placeholder="E-post" value={email} onChange={e => setEmail(e.target.value)} />
+      <input type="password" className="border rounded px-2 py-1" placeholder="Parool" value={pass} onChange={e => setPass(e.target.value)} />
+      <button className="px-3 py-1 border rounded" onClick={() => onLogin(email, pass)}>Logi sisse</button>
     </div>
   )
 }
