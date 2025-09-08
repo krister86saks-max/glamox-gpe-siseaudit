@@ -63,21 +63,21 @@ export default function App() {
 
     // Päise kohustuslikud väljad
     const missing: Array<{id:string; msg:string}> = []
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) missing.push({ id: 'hdr-date', msg: 'Palun vali kuup\u00E4ev.' })
-    if (!auditor.trim()) missing.push({ id: 'hdr-auditor', msg: 'Palun t\u00E4ida auditeerija nimi.' })
-    if (!auditee.trim()) missing.push({ id: 'hdr-auditee', msg: 'Palun t\u00E4ida auditeeritav.' })
-    if (!auditeeTitle.trim()) missing.push({ id: 'hdr-title', msg: 'Palun t\u00E4ida auditeeritava amet.' })
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) missing.push({ id: 'hdr-date', msg: 'Palun vali kuupäev.' })
+    if (!auditor.trim()) missing.push({ id: 'hdr-auditor', msg: 'Palun täida auditeerija nimi.' })
+    if (!auditee.trim()) missing.push({ id: 'hdr-auditee', msg: 'Palun täida auditeeritav.' })
+    if (!auditeeTitle.trim()) missing.push({ id: 'hdr-title', msg: 'Palun täida auditeeritava amet.' })
     if (missing.length) {
       alert(missing[0].msg)
       setTimeout(() => document.getElementById(missing[0].id)?.focus(), 0)
       return
     }
 
-    // Kontroll: PE/MV korral märkus kohustuslik
+    // PE/MV korral on märkus kohustuslik
     const bad = Object.entries(answers).find(([ , a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
     if (bad) {
       const id = bad[0]
-      alert(`K\u00FCsimusel ${id} on PE v\u00F5i MV \u2014 palun t\u00E4ida "M\u00E4rkus: PE/MV".`)
+      alert(`Küsimusel ${id} on PE või MV — palun täida "Märkus: PE/MV".`)
       setTimeout(() => document.getElementById('note-' + id)?.focus(), 0)
       return
     }
@@ -86,14 +86,13 @@ export default function App() {
       org: orgName,
       department_id: dept.id,
       standards: stds,
-      // soovi korral saame hiljem lisada serverisse salvestuse päisele:
-      // header: { date, auditor, auditee, auditeeTitle, subDept }
+      // header: { date, auditor, auditee, auditeeTitle, subDept } // kui tahad, salvestame hiljem serverisse
       answers: Object.entries(answers).map(([id, a]) => ({ question_id: id, ...a })),
     }
     const r = await fetch(API + '/api/audits', { method: 'POST', headers: { 'Content-Type':'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(payload) })
     const j = await r.json()
     if (r.ok) alert('Audit salvestatud. ID: ' + j.audit_id)
-    else alert(j.error || 'Salvestus eba\u00F5nnestus')
+    else alert(j.error || 'Salvestus ebaõnnestus')
   }
 
   async function post(url: string, body: any, method='POST') {
@@ -127,20 +126,20 @@ export default function App() {
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
-              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi v\u00E4lja</button>
+              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
             </div>
           )}
         </div>
       </header>
 
-      {/* “Kaks t\u00FChja rida” visuaalselt */}
+      {/* visuaalselt “kaks tühja rida” */}
       <div className="mt-6" />
 
-      {/* P\u00C4IS: kohustuslikud v\u00E4ljad */}
+      {/* Päis */}
       <section className="mb-6 p-3 border rounded">
         <div className="grid md:grid-cols-2 gap-3">
           <div>
-            <label htmlFor="hdr-date" className="block text-xs font-semibold">Kuup\u00E4ev *</label>
+            <label htmlFor="hdr-date" className="block text-xs font-semibold">Kuupäev *</label>
             <input
               id="hdr-date"
               type="date"
@@ -200,7 +199,7 @@ export default function App() {
         <div className="grid md:grid-cols-4 gap-4">
           <div className="space-y-3">
             <div className="p-3 border rounded">
-              <label className="block text-xs font-semibold">Ettev\u00F5tte nimi</label>
+              <label className="block text-xs font-semibold">Ettevõtte nimi</label>
               <input className="w-full border rounded px-2 py-1" value={orgName} onChange={e => setOrgName(e.target.value)} />
             </div>
             <div className="p-3 border rounded">
@@ -219,7 +218,7 @@ export default function App() {
             </div>
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Otsi</label>
-              <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="k\u00FCsimus, klausel..." />
+              <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="küsimus, klausel..." />
             </div>
 
             {role === 'admin' && (
@@ -237,20 +236,20 @@ export default function App() {
                 </div>
 
                 <div>
-                  <div className="text-xs">K\u00FCsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="k\u00FCsimuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
+                  <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e=>setQEdit({...qEdit, department_id:e.target.value})} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="k\u00FCsimuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi n\u00F5ue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
+                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e=>setQEdit({...qEdit, stds:e.target.value})} />
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e=>setQEdit({...qEdit, guidance:e.target.value})} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa k\u00FCsimus</button>
+                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
                     ) : (
                       <>
                         <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>T\u00FChista</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
                       </>
                     )}
                   </div>
@@ -266,7 +265,7 @@ export default function App() {
               <div key={q.id} className="p-3 border rounded">
                 <div className="flex items-start gap-2">
                   <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
-                  {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi n\u00F5ue: {q.clause}</span>}
+                  {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
                   <span className="ml-auto flex items-center gap-1">
                     {a.mv && <Excl color="red" title="Mittevastavus" />}
                     {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
@@ -333,11 +332,11 @@ export default function App() {
                   </label>
                 </div>
 
-                {/* T\u00F5endid / M\u00E4rkus */}
+                {/* Tõendid / Märkus */}
                 <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
                   <textarea
                     className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y"
-                    placeholder={"T\u00F5endid"}
+                    placeholder="Tõendid"
                     value={a.evidence || ''}
                     onInput={autoResize}
                     onChange={e =>
@@ -353,8 +352,8 @@ export default function App() {
                     }
                     placeholder={
                       ((a.mv || a.pe) && !(a.note && a.note.trim()))
-                        ? 'M\u00E4rkus: PE/MV (kohustuslik)'
-                        : 'M\u00E4rkus: PE/MV'
+                        ? 'Märkus: PE/MV (kohustuslik)'
+                        : 'Märkus: PE/MV'
                     }
                     value={a.note || ''}
                     onInput={autoResize}
@@ -407,3 +406,4 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
