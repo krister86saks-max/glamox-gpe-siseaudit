@@ -15,7 +15,6 @@ export default function App() {
   const [deptId, setDeptId] = useState<string>('')
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
-  const [orgName, setOrgName] = useState('Glamox AS')
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
   const [query, setQuery] = useState('')
 
@@ -31,8 +30,15 @@ export default function App() {
   const [auditeeTitle, setAuditeeTitle] = useState<string>('')
   const [subDept, setSubDept] = useState<string>('')
 
-  const [qEdit, setQEdit] = useState<{mode:'add'|'edit', id:string, department_id:string, text:string, clause:string, stds:string, guidance:string}>(
-    {mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''})
+  const [qEdit, setQEdit] = useState<{
+    mode: 'add' | 'edit',
+    id: string,
+    department_id: string,
+    text: string,
+    clause: string,
+    stds: string,
+    guidance: string
+  }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
   const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
 
   async function refreshSchema() {
@@ -43,7 +49,11 @@ export default function App() {
   useEffect(() => { refreshSchema() }, [])
 
   async function login(email: string, password: string) {
-    const r = await fetch(API + '/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) })
+    const r = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    })
     const j = await r.json()
     if (r.ok) { setToken(j.token); setRole(j.role) } else alert(j.error || 'login failed')
   }
@@ -62,7 +72,7 @@ export default function App() {
     if (!dept) return
 
     // Päise kohustuslikud väljad
-    const missing: Array<{id:string; msg:string}> = []
+    const missing: Array<{ id: string; msg: string }> = []
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) missing.push({ id: 'hdr-date', msg: 'Palun vali kuupäev.' })
     if (!auditor.trim()) missing.push({ id: 'hdr-auditor', msg: 'Palun täida auditeerija nimi.' })
     if (!auditee.trim()) missing.push({ id: 'hdr-auditee', msg: 'Palun täida auditeeritav.' })
@@ -74,7 +84,7 @@ export default function App() {
     }
 
     // PE/MV korral on märkus kohustuslik
-    const bad = Object.entries(answers).find(([ , a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
+    const bad = Object.entries(answers).find(([, a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
     if (bad) {
       const id = bad[0]
       alert(`Küsimusel ${id} on PE või MV — palun täida "Märkus: PE/MV".`)
@@ -83,29 +93,42 @@ export default function App() {
     }
 
     const payload = {
-      org: orgName,
       department_id: dept.id,
       standards: stds,
-      // header: { date, auditor, auditee, auditeeTitle, subDept } // kui tahad, salvestame hiljem serverisse
       answers: Object.entries(answers).map(([id, a]) => ({ question_id: id, ...a })),
     }
-    const r = await fetch(API + '/api/audits', { method: 'POST', headers: { 'Content-Type':'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(payload) })
+    const r = await fetch(API + '/api/audits', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+      body: JSON.stringify(payload)
+    })
     const j = await r.json()
     if (r.ok) alert('Audit salvestatud. ID: ' + j.audit_id)
     else alert(j.error || 'Salvestus ebaõnnestus')
   }
 
-  async function post(url: string, body: any, method='POST') {
-    const r = await fetch(API + url, { method, headers: { 'Content-Type':'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) })
+  async function post(url: string, body: any, method = 'POST') {
+    const r = await fetch(API + url, {
+      method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(body)
+    })
     const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
   }
   async function del(url: string) {
-    const r = await fetch(API + url, { method:'DELETE', headers: { Authorization: 'Bearer ' + token } })
+    const r = await fetch(API + url, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } })
     const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
   }
 
   function startEditQuestion(q: Question) {
-    setQEdit({ mode:'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
+    setQEdit({
+      mode: 'edit',
+      id: q.id,
+      department_id: deptId,
+      text: q.text,
+      clause: q.clause || '',
+      stds: q.stds.join(' '),
+      guidance: q.guidance || ''
+    })
   }
 
   // textarea auto-grow
@@ -132,10 +155,10 @@ export default function App() {
         </div>
       </header>
 
-      {/* visuaalselt “kaks tühja rida” */}
+      {/* kaks “tühja” rida visuaalselt */}
       <div className="mt-6" />
 
-      {/* Päis */}
+      {/* Päis – lisatud OSakond, eemaldatud Ettevõtte nimi */}
       <section className="mb-6 p-3 border rounded">
         <div className="grid md:grid-cols-2 gap-3">
           <div>
@@ -182,6 +205,23 @@ export default function App() {
             />
           </div>
 
+          {/* OSakond headerisse – alamosakonna kohale */}
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold">Osakond</label>
+            <select
+              className="w-full border rounded px-2 py-1"
+              value={deptId}
+              onChange={e => setDeptId(e.target.value)}
+              disabled={!schema}
+            >
+              {!schema ? (
+                <option>Laen osakondi…</option>
+              ) : (
+                schema.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)
+              )}
+            </select>
+          </div>
+
           <div className="md:col-span-2">
             <label htmlFor="hdr-subdept" className="block text-xs font-semibold">Alamosakond (kui kohandub)</label>
             <input
@@ -198,27 +238,33 @@ export default function App() {
       {!schema ? <div>Laen skeemi...</div> : (
         <div className="grid md:grid-cols-4 gap-4">
           <div className="space-y-3">
-            <div className="p-3 border rounded">
-              <label className="block text-xs font-semibold">Ettevõtte nimi</label>
-              <input className="w-full border rounded px-2 py-1" value={orgName} onChange={e => setOrgName(e.target.value)} />
-            </div>
-            <div className="p-3 border rounded">
-              <label className="block text-xs font-semibold">Osakond</label>
-              <select className="w-full border rounded px-2 py-1" value={deptId} onChange={e => setDeptId(e.target.value)}>
-                {schema.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
+            {/* EEMALDATUD: Ettevõtte nimi paneel */}
+
+            {/* EEMALDATUD: Osakond paneel – nüüd päises */}
+
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Standard</label>
               <div className="flex gap-2 flex-wrap mt-1">
-                {(['9001','14001','45001'] as Std[]).map(s => (
-                  <button key={s} className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')} onClick={() => setStds(prev => prev.includes(s)? prev.filter(x => x!==s) : [...prev,s])}>ISO {s}</button>
+                {(['9001', '14001', '45001'] as Std[]).map(s => (
+                  <button
+                    key={s}
+                    className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')}
+                    onClick={() => setStds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
+                  >
+                    ISO {s}
+                  </button>
                 ))}
               </div>
             </div>
+
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Otsi</label>
-              <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="küsimus, klausel..." />
+              <input
+                className="w-full border rounded px-2 py-1"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="küsimus, klausel..."
+              />
             </div>
 
             {role === 'admin' && (
@@ -226,30 +272,40 @@ export default function App() {
                 <div className="font-semibold">Redigeerimine</div>
                 <div>
                   <div className="text-xs">Osakond</div>
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e=>setDepEdit({...depEdit, id:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e=>setDepEdit({...depEdit, name:e.target.value})} />
+                  <input
+                    className="border rounded px-2 py-1 mr-2"
+                    placeholder="id (nt ostmine)"
+                    value={depEdit.id}
+                    onChange={e => setDepEdit({ ...depEdit, id: e.target.value })}
+                  />
+                  <input
+                    className="border rounded px-2 py-1 mr-2"
+                    placeholder="nimetus"
+                    value={depEdit.name}
+                    onChange={e => setDepEdit({ ...depEdit, name: e.target.value })}
+                  />
                   <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments/'+depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={()=>del('/api/departments/'+depEdit.id)}>Kustuta</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
                   </div>
                 </div>
 
                 <div>
                   <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e=>setQEdit({...qEdit, department_id:e.target.value})} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e=>setQEdit({...qEdit, stds:e.target.value})} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e=>setQEdit({...qEdit, guidance:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
+                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
                     ) : (
                       <>
-                        <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
+                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
                       </>
                     )}
                   </div>
@@ -262,108 +318,105 @@ export default function App() {
             {!dept ? <div>Vali osakond</div> : visible.map((q) => {
               const a = answers[q.id] || {}
               return (
-              <div key={q.id} className="p-3 border rounded">
-                <div className="flex items-start gap-2">
-                  <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
-                  {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
-                  <span className="ml-auto flex items-center gap-1">
-                    {a.mv && <Excl color="red" title="Mittevastavus" />}
-                    {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
-                    {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
-                  </span>
-                  {role === 'admin' && (
-                    <span className="ml-2 space-x-2">
-                      <button className="text-xs px-2 py-0.5 border rounded" onClick={()=> startEditQuestion(q)}>Muuda</button>
-                      <button className="text-xs px-2 py-0.5 border rounded" onClick={()=> del('/api/questions/'+q.id)}>Kustuta</button>
+                <div key={q.id} className="p-3 border rounded">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
+                    {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
+                    <span className="ml-auto flex items-center gap-1">
+                      {a.mv && <Excl color="red" title="Mittevastavus" />}
+                      {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
+                      {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                     </span>
-                  )}
-                </div>
-                <div className="mt-2">{q.text}</div>
-                {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
+                    {role === 'admin' && (
+                      <span className="ml-2 space-x-2">
+                        <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
+                        <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2">{q.text}</div>
+                  {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                {/* VS / PE / MV checkboxid */}
-                <div className="mt-2 flex gap-3 flex-wrap items-center">
-                  <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={!!a.vs}
-                      onChange={() =>
-                        setAnswers(p => {
-                          const cur = p[q.id] || {}
-                          const next = { ...cur, vs: !cur.vs }
-                          if (next.vs) next.mv = false
-                          return { ...p, [q.id]: next }
-                        })
-                      }
+                  {/* VS / PE / MV checkboxid */}
+                  <div className="mt-2 flex gap-3 flex-wrap items-center">
+                    <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!a.vs}
+                        onChange={() =>
+                          setAnswers(p => {
+                            const cur = p[q.id] || {}
+                            const next = { ...cur, vs: !cur.vs }
+                            if (next.vs) next.mv = false
+                            return { ...p, [q.id]: next }
+                          })
+                        }
+                      />
+                      Vastab standardile
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!a.pe}
+                        onChange={() =>
+                          setAnswers(p => {
+                            const cur = p[q.id] || {}
+                            const next = { ...cur, pe: !cur.pe }
+                            if (next.pe) next.mv = false
+                            return { ...p, [q.id]: next }
+                          })
+                        }
+                      />
+                      Parendusettepanek
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!a.mv}
+                        onChange={() =>
+                          setAnswers(p => {
+                            const cur = p[q.id] || {}
+                            const next = { ...cur, mv: !cur.mv }
+                            if (next.mv) { next.vs = false; next.pe = false }
+                            return { ...p, [q.id]: next }
+                          })
+                        }
+                      />
+                      Mittevastavus
+                    </label>
+                  </div>
+
+                  {/* Tõendid / Märkus */}
+                  <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
+                    <textarea
+                      className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y"
+                      placeholder="Tõendid"
+                      value={a.evidence || ''}
+                      onInput={autoResize}
+                      onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                     />
-                    Vastab standardile
-                  </label>
 
-                  <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={!!a.pe}
-                      onChange={() =>
-                        setAnswers(p => {
-                          const cur = p[q.id] || {}
-                          const next = { ...cur, pe: !cur.pe }
-                          if (next.pe) next.mv = false
-                          return { ...p, [q.id]: next }
-                        })
+                    <textarea
+                      id={'note-' + q.id}
+                      className={
+                        'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y ' +
+                        (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                       }
-                    />
-                    Parendusettepanek
-                  </label>
-
-                  <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={!!a.mv}
-                      onChange={() =>
-                        setAnswers(p => {
-                          const cur = p[q.id] || {}
-                          const next = { ...cur, mv: !cur.mv }
-                          if (next.mv) { next.vs = false; next.pe = false }
-                          return { ...p, [q.id]: next }
-                        })
+                      placeholder={
+                        ((a.mv || a.pe) && !(a.note && a.note.trim()))
+                          ? 'Märkus: PE/MV (kohustuslik)'
+                          : 'Märkus: PE/MV'
                       }
+                      value={a.note || ''}
+                      onInput={autoResize}
+                      onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                     />
-                    Mittevastavus
-                  </label>
+                  </div>
                 </div>
-
-                {/* Tõendid / Märkus */}
-                <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
-                  <textarea
-                    className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y"
-                    placeholder="Tõendid"
-                    value={a.evidence || ''}
-                    onInput={autoResize}
-                    onChange={e =>
-                      setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))
-                    }
-                  />
-
-                  <textarea
-                    id={'note-' + q.id}
-                    className={
-                      'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y ' +
-                      (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
-                    }
-                    placeholder={
-                      ((a.mv || a.pe) && !(a.note && a.note.trim()))
-                        ? 'Märkus: PE/MV (kohustuslik)'
-                        : 'Märkus: PE/MV'
-                    }
-                    value={a.note || ''}
-                    onInput={autoResize}
-                    onChange={e =>
-                      setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))
-                    }
-                  />
-                </div>
-              </div>
-            )})}
+              )
+            })}
             <div className="flex justify-end">
               <button className="px-4 py-2 rounded border" onClick={submitAudit}>Salvesta audit</button>
             </div>
@@ -374,12 +427,12 @@ export default function App() {
   )
 }
 
-function Excl({ color, title }: { color: 'red'|'blue'; title: string }) {
+function Excl({ color, title }: { color: 'red' | 'blue'; title: string }) {
   const cn = color === 'red' ? 'text-red-600' : 'text-blue-600'
   return (
     <span title={title} className={cn} aria-label={title}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
       </svg>
     </span>
   )
@@ -389,21 +442,22 @@ function Check({ color, title }: { color: 'green'; title: string }) {
   return (
     <span title={title} className="text-green-600" aria-label={title}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z"/>
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z" />
       </svg>
     </span>
   )
 }
 
-function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: string; defaultPass: string; onLogin: (e:string,p:string)=>void }) {
+function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: string; defaultPass: string; onLogin: (e: string, p: string) => void }) {
   const [email, setEmail] = useState(defaultEmail)
   const [pass, setPass] = useState(defaultPass)
   return (
     <div className="flex items-center gap-2">
-      <input className="border rounded px-2 py-1" value={email} onChange={e=>setEmail(e.target.value)} />
-      <input type="password" className="border rounded px-2 py-1" value={pass} onChange={e=>setPass(e.target.value)} />
-      <button className="px-3 py-1 border rounded" onClick={()=>onLogin(email, pass)}>Login</button>
+      <input className="border rounded px-2 py-1" value={email} onChange={e => setEmail(e.target.value)} />
+      <input type="password" className="border rounded px-2 py-1" value={pass} onChange={e => setPass(e.target.value)} />
+      <button className="px-3 py-1 border rounded" onClick={() => onLogin(email, pass)}>Login</button>
     </div>
   )
 }
+
 
