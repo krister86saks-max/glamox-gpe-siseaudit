@@ -1,4 +1,4 @@
-
+// server/index.js
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
@@ -10,6 +10,7 @@ import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import crypto from 'crypto'
 
 const app = express()
 app.use(express.json())
@@ -30,6 +31,30 @@ await db.read()
 db.data ||= { users: [], departments: [], questions: [], audits: [], answers: [] }
 const save = () => db.write()
 
+// --- Admin auto-bootstrap (ENV-ist) ---
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
+if (ADMIN_EMAIL && ADMIN_PASSWORD) {
+  const existing = db.data.users.find(u => u.email === ADMIN_EMAIL)
+  const password_hash = bcrypt.hashSync(ADMIN_PASSWORD, 10)
+  if (!existing) {
+    db.data.users.push({
+      id: crypto.randomUUID(),
+      email: ADMIN_EMAIL,
+      role: 'admin',
+      password_hash,
+    })
+    await save()
+    console.log('Bootstrap: loodud admin kasutaja ->', ADMIN_EMAIL)
+  } else if (!bcrypt.compareSync(ADMIN_PASSWORD, existing.password_hash)) {
+    // uuenda parool, kui ENV-is on teine
+    existing.password_hash = password_hash
+    await save()
+    console.log('Bootstrap: uuendasin admin parooli ->', ADMIN_EMAIL)
+  }
+}
+
+// --- Auth helpers ---
 function authRequired(req, res, next) {
   const auth = req.headers.authorization || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
@@ -44,6 +69,7 @@ function requireRole(role) {
   }
 }
 
+// --- Login ---
 app.post('/auth/login', async (req,res) => {
   const { email, password } = req.body || {}
   const user = db.data.users.find(u => u.email === email)
@@ -53,6 +79,7 @@ app.post('/auth/login', async (req,res) => {
   res.json({ token, role: user.role, email: user.email })
 })
 
+// --- Schema ---
 app.get('/api/schema', (req,res) => {
   const deps = db.data.departments, questions = db.data.questions
   const schema = {
@@ -67,6 +94,7 @@ app.get('/api/schema', (req,res) => {
   res.json(schema)
 })
 
+// --- Departments CRUD ---
 app.post('/api/departments', authRequired, requireRole('admin'), async (req,res) => {
   const { id, name } = req.body || {}
   if (!id || !name) return res.status(400).json({ error: 'id and name required' })
@@ -84,6 +112,7 @@ app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (re
   await save(); res.json({ ok: true })
 })
 
+// --- Questions CRUD ---
 app.post('/api/questions', authRequired, requireRole('admin'), async (req,res) => {
   const { id, department_id, text, clause, stds, guidance, tags } = req.body || {}
   if (!id || !department_id || !text || !stds) return res.status(400).json({ error: 'id, department_id, text, stds required' })
@@ -106,11 +135,12 @@ app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req,
   await save(); res.json({ ok: true })
 })
 
+// --- Audits ---
 app.post('/api/audits', authRequired, requireRole(['admin','auditor']), async (req,res) => {
-  const { org, department_id, standards, answers } = req.body || {}
+  const { department_id, standards, answers } = req.body || {}
   const id = (db.data.audits.at(-1)?.id || 0) + 1
-  db.data.audits.push({ id, org: org || null, department_id, standards: standards || [], created_at: new Date().toISOString() })
-  for (const a of answers) db.data.answers.push({ audit_id: id, ...a })
+  db.data.audits.push({ id, department_id, standards: standards || [], created_at: new Date().toISOString() })
+  for (const a of (answers || [])) db.data.answers.push({ audit_id: id, ...a })
   await save(); res.json({ ok: true, audit_id: id })
 })
 app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','external']), (req,res) => {
@@ -120,9 +150,11 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
   res.json({ audit: a, answers: ans })
 })
 
+// --- Static client ---
 app.use(express.static(path.join(__dirname, 'public')))
 app.get(/^(?!\/api).*/, (req,res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 
 app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+
