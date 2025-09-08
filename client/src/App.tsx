@@ -64,6 +64,17 @@ export default function App() {
   }
 
   const dept = schema?.departments.find(d => d.id === deptId)
+
+  // Päises kuvamiseks: millised standardid on valitud osakonna KÜSIMUSTES (unikaalne hulk)
+  const deptStandards = useMemo<Std[]>(() => {
+    if (!dept) return []
+    const set = new Set<Std>()
+    for (const q of dept.questions) {
+      for (const s of q.stds) set.add(s)
+    }
+    return Array.from(set).sort() as Std[]
+  }, [dept])
+
   const visible = useMemo(() => {
     if (!dept) return []
     const active = new Set(stds)
@@ -211,6 +222,22 @@ export default function App() {
             <label htmlFor="hdr-subdept" className="block text-xs font-semibold">Alamosakond (kui kohandub)</label>
             <input id="hdr-subdept" className="w-full border rounded px-2 py-1" placeholder="nt alamosakond" value={subDept} onChange={e => setSubDept(e.target.value)} />
           </div>
+
+          {/* UUS: Kohaldatavad standardid (tulevad osakonna küsimustest) */}
+          {dept && (
+            <div className="md:col-span-2">
+              <div className="block text-xs font-semibold">Kohaldatavad standardid</div>
+              <div className="mt-1 flex gap-2 flex-wrap">
+                {deptStandards.length === 0 ? (
+                  <span className="text-xs text-gray-500">–</span>
+                ) : (
+                  deptStandards.map(s => (
+                    <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex justify-end no-print">
@@ -299,14 +326,22 @@ export default function App() {
                 const a = answers[q.id] || {}
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2 flex-wrap">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
+
+                      {/* UUS: standardimärgid küsimuse juures */}
+                      {q.stds?.length > 0 && q.stds.map(s => (
+                        <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
+                      ))}
+
                       {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
+
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
+
                       {role === 'admin' && (
                         <span className="ml-2 space-x-2 no-print">
                           <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
@@ -314,6 +349,7 @@ export default function App() {
                         </span>
                       )}
                     </div>
+
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
@@ -439,6 +475,5 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
-
 
 
