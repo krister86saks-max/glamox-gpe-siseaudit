@@ -79,6 +79,13 @@ export default function App() {
     setQEdit({ mode:'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
   }
 
+  // --- teeb textarea'd sisuga automaatselt kõrgemaks (ülapiir 800px) ---
+  function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
+    const el = e.currentTarget
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 800) + 'px'
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-4">
       <header className="flex items-center gap-3 mb-4">
@@ -233,9 +240,37 @@ export default function App() {
                   </label>
                 </div>
 
-                <div className="mt-2 grid md:grid-cols-3 gap-2">
-                  <textarea className="border rounded px-2 py-1 md:col-span-2" placeholder="Tõendid" value={a.evidence || ''} onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], evidence:e.target.value}}))}/>
-                  <input id={'note-' + q.id} className={'border rounded px-2 py-1 ' + (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')} placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'} value={a.note || ''} onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], note:e.target.value}}))}/>
+                {/* --- Tõendid / Märkus: laiused vahetuses, 3× kõrgem, auto-grow --- */}
+                <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
+                  {/* Tõendid — 1/3 lai, min-h-32, kasvab sisuga */}
+                  <textarea
+                    className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y"
+                    placeholder="Tõendid"
+                    value={a.evidence || ''}
+                    onInput={autoResize}
+                    onChange={e =>
+                      setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))
+                    }
+                  />
+
+                  {/* Märkus — 2/3 lai, min-h-32, nõude korral punane raam, kasvab sisuga */}
+                  <textarea
+                    id={'note-' + q.id}
+                    className={
+                      'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y ' +
+                      (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
+                    }
+                    placeholder={
+                      ((a.mv || a.pe) && !(a.note && a.note.trim()))
+                        ? 'Märkus: PE/MV (kohustuslik)'
+                        : 'Märkus: PE/MV'
+                    }
+                    value={a.note || ''}
+                    onInput={autoResize}
+                    onChange={e =>
+                      setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))
+                    }
+                  />
                 </div>
               </div>
             )})}
@@ -281,3 +316,4 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
