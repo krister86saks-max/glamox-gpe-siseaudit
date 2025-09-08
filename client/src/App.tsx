@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 type Std = '9001' | '14001' | '45001'
 type Question = { id: string; text: string; clause?: string; stds: Std[]; guidance?: string }
@@ -155,6 +155,61 @@ export default function App() {
     window.print()
   }
 
+  /* ---------------------- ADMIN: EXPORT / IMPORT ---------------------- */
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importMode, setImportMode] = useState<'replace' | 'merge' | null>(null)
+
+  async function handleExport() {
+    try {
+      const r = await fetch(API + '/api/admin/export', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data?.error || 'Export failed')
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `schema-backup-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      alert(e.message || 'Export error')
+    }
+  }
+
+  function triggerImport(mode: 'replace' | 'merge') {
+    setImportMode(mode)
+    fileInputRef.current?.click()
+  }
+
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // reset
+    if (!file) return
+    try {
+      const text = await file.text()
+      const payload = JSON.parse(text)
+      const r = await fetch(API + '/api/admin/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ ...payload, mode: importMode || 'merge' })
+      })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data?.error || 'Import failed')
+      alert('Skeem imporditud.')
+      await refreshSchema()
+    } catch (e: any) {
+      alert(e.message || 'Import error')
+    } finally {
+      setImportMode(null)
+    }
+  }
+  /* ------------------------------------------------------------------- */
+
   return (
     <div className="max-w-6xl mx-auto p-4">
       {/* Väike print-CSS: peida .no-print asjad prindis */}
@@ -223,7 +278,7 @@ export default function App() {
             <input id="hdr-subdept" className="w-full border rounded px-2 py-1" placeholder="nt alamosakond" value={subDept} onChange={e => setSubDept(e.target.value)} />
           </div>
 
-          {/* UUS: Kohaldatavad standardid (tulevad osakonna küsimustest) */}
+          {/* Kohaldatavad standardid */}
           {dept && (
             <div className="md:col-span-2">
               <div className="block text-xs font-semibold">Kohaldatavad standardid</div>
@@ -308,6 +363,24 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
+                {/* --- UUS: Varunda / Taasta skeem --- */}
+                <div className="pt-2 border-t">
+                  <div className="font-semibold mb-1">Varunda / Taasta skeem</div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <button className="px-2 py-1 border rounded" onClick={handleExport}>Ekspordi skeem (JSON)</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => triggerImport('replace')}>Impordi (asenda)</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => triggerImport('merge')}>Impordi (lisa/uuenda)</button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/json"
+                      className="hidden"
+                      onChange={onPickFile}
+                    />
+                  </div>
+                </div>
+                {/* ----------------------------------- */}
               </div>
             )}
           </div>
@@ -329,7 +402,7 @@ export default function App() {
                     <div className="flex items-start gap-2 flex-wrap">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
 
-                      {/* UUS: standardimärgid küsimuse juures */}
+                      {/* standardimärgid küsimuse juures */}
                       {q.stds?.length > 0 && q.stds.map(s => (
                         <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
                       ))}
@@ -475,5 +548,6 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
 
