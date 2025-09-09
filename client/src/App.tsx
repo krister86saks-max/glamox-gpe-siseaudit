@@ -13,11 +13,8 @@ export default function App() {
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
   const [schema, setSchema] = useState<Schema | null>(null)
 
-  // protsess valitakse käsitsi
-  const [deptId, setDeptId] = useState<string>('')
-
-  // küsimustiku avamine
-  const [questionsOpen, setQuestionsOpen] = useState(false)
+  const [deptId, setDeptId] = useState<string>('')            // protsess valitakse käsitsi
+  const [questionsOpen, setQuestionsOpen] = useState(false)   // küsimustiku avamine
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
@@ -136,7 +133,7 @@ export default function App() {
     el.style.height = Math.min(el.scrollHeight, 800) + 'px'
   }
 
-  // ---------- PRINT: vaheta textarea prindis <div>-iks, et sisu jaotuks üle lehe ----------
+  // ---------- PRINT: textarea -> varju-div ----------
   useEffect(() => {
     const before = () => {
       const tas = Array.from(document.querySelectorAll('textarea.txt-print')) as HTMLTextAreaElement[]
@@ -144,7 +141,6 @@ export default function App() {
         const div = document.createElement('div')
         div.className = 'print-shadow ' + (ta.classList.contains('note-field') ? 'is-note' : 'is-evidence')
         div.textContent = ta.value || ''
-        // hoia ligikaudne kõrgus
         const h = Math.max(ta.scrollHeight, ta.getBoundingClientRect().height)
         div.style.minHeight = Math.round(h) + 'px'
         ta.classList.add('hidden-for-print')
@@ -161,6 +157,34 @@ export default function App() {
   }, [answers])
 
   function handlePrint() { window.print() }
+
+  // --- Backup UI handlers ---
+  async function exportData() {
+    if (!token) return alert('Logi sisse.')
+    const r = await fetch(API + '/api/export', { headers: { Authorization: 'Bearer ' + token } })
+    if (!r.ok) { const j = await r.json().catch(()=>({})); return alert(j.error || 'Export ebaõnnestus') }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'siseaudit-backup.json'
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  }
+  async function importData(file: File | null) {
+    if (!file || !token) return
+    const text = await file.text()
+    let json: any
+    try { json = JSON.parse(text) } catch { return alert('Vale JSON') }
+    const r = await fetch(API + '/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(json)
+    })
+    const j = await r.json().catch(()=>({}))
+    if (!r.ok) return alert(j.error || 'Import ebaõnnestus')
+    alert('Andmed imporditud.')
+    refreshSchema()
+  }
 
   return (
     <div className="max-w-6xl mx-auto p-4">
@@ -179,9 +203,8 @@ export default function App() {
             width: 100%;
             break-inside: auto; page-break-inside: auto;
           }
-          /* Kõrgused: Tõendid baas, Märkus ~30% kõrgem */
           .print-shadow.is-evidence { min-height: 8rem !important; }
-          .print-shadow.is-note     { min-height: 10.4rem !important; } /* 8rem * 1.3 */
+          .print-shadow.is-note     { min-height: 10.4rem !important; } /* ~30% kõrgem */
         }
       `}</style>
 
@@ -288,39 +311,56 @@ export default function App() {
             </div>
 
             {role === 'admin' && (
-              <div className="p-3 border rounded space-y-3">
-                <div className="font-semibold">Redigeerimine</div>
-                <div>
-                  <div className="text-xs">Protsess</div>
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
-                  <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+              <>
+                <div className="p-3 border rounded space-y-3">
+                  <div className="font-semibold">Redigeerimine</div>
+                  <div>
+                    <div className="text-xs">Protsess</div>
+                    <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
+                    <div className="mt-1 space-x-2">
+                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                      <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
+                    <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
+                    <div className="space-x-2">
+                      {qEdit.mode === 'add' ? (
+                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      ) : (
+                        <>
+                          <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                          <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
-                  <div className="space-x-2">
-                    {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
-                    ) : (
-                      <>
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
-                      </>
-                    )}
+                {/* Varunda / taasta */}
+                <div className="p-3 border rounded space-y-2">
+                  <div className="font-semibold">Varunda / taasta</div>
+                  <div className="flex items-center gap-2">
+                    <button className="px-2 py-1 border rounded" onClick={exportData}>Ekspordi JSON</button>
+                    <label className="px-2 py-1 border rounded cursor-pointer">
+                      Impordi JSON
+                      <input type="file" accept="application/json" className="hidden" onChange={e => importData(e.target.files?.[0] || null)} />
+                    </label>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Kasuta enne deployd <em>Ekspordi</em> ja pärast deployd <em>Impordi</em>, kui püsikettaid ei kasuta.
                   </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -428,5 +468,6 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
 

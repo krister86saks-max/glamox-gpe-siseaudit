@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 
 const app = express()
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 
 app.use(helmet())
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }))
@@ -22,6 +22,10 @@ app.use(cors())
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 
+// *** PERSISTENTSUS ***
+// Kui kunagi lisad Renderis Persistent Diski (mount path tavaliselt /var/data),
+// sea keskkonnamuutuja DATA_DIR=/var/data.
+// Tasuta plaanil failid ei säili deploy vahel.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataDir = process.env.DATA_DIR || process.cwd()
 const dbFile = path.join(dataDir, 'data.json')
@@ -47,7 +51,6 @@ if (ADMIN_EMAIL && ADMIN_PASSWORD) {
     await save()
     console.log('Bootstrap: loodud admin kasutaja ->', ADMIN_EMAIL)
   } else if (!bcrypt.compareSync(ADMIN_PASSWORD, existing.password_hash)) {
-    // uuenda parool, kui ENV-is on teine
     existing.password_hash = password_hash
     await save()
     console.log('Bootstrap: uuendasin admin parooli ->', ADMIN_EMAIL)
@@ -150,15 +153,31 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
   res.json({ audit: a, answers: ans })
 })
 
+// --- EXPORT / IMPORT (backup taastamiseks tasuta plaanil) ---
+app.get('/api/export', authRequired, requireRole('admin'), (req,res) => {
+  const { users, ...rest } = db.data   // kasutajaid ei ekspordi (paroolirisk); vajadusel saab lisada
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Content-Disposition', 'attachment; filename="siseaudit-backup.json"')
+  res.send(JSON.stringify(rest, null, 2))
+})
+
+app.post('/api/import', authRequired, requireRole('admin'), async (req,res) => {
+  const { departments, questions, audits, answers } = req.body || {}
+  if (!Array.isArray(departments) || !Array.isArray(questions) || !Array.isArray(audits) || !Array.isArray(answers)) {
+    return res.status(400).json({ error: 'invalid payload' })
+  }
+  db.data.departments = departments
+  db.data.questions   = questions
+  db.data.audits      = audits
+  db.data.answers     = answers
+  await save()
+  res.json({ ok: true })
+})
+
 // --- Static client ---
 app.use(express.static(path.join(__dirname, 'public')))
-
-// SPA fallback: lisa korrektne charset, et täpitähed ei läheks sassi
-app.get(/^(?!\/api).*/, (req, res) => {
-  res.set('Content-Type', 'text/html; charset=utf-8')
+app.get(/^(?!\/api).*/, (req,res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 
 app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
-
-
