@@ -4,7 +4,7 @@ type Std = '9001' | '14001' | '45001'
 type Question = { id: string; text: string; clause?: string; stds: Std[]; guidance?: string }
 type Department = { id: string; name: string; questions: Question[] }
 type Schema = { meta: { version: string; org: string }; departments: Department[] }
-type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; note?: string; photos?: string[] }
+type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; note?: string }
 
 const API = (import.meta.env.VITE_API_URL ?? window.location.origin)
 
@@ -13,12 +13,18 @@ export default function App() {
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
   const [schema, setSchema] = useState<Schema | null>(null)
 
-  const [deptId, setDeptId] = useState<string>('')                // protsess valitakse käsitsi
-  const [questionsOpen, setQuestionsOpen] = useState(false)       // küsimustiku avamine
+  // protsess valitakse käsitsi
+  const [deptId, setDeptId] = useState<string>('')
+
+  // küsimustiku avamine/sulgemine
+  const [questionsOpen, setQuestionsOpen] = useState(false)
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
   const [query, setQuery] = useState('')
+
+  // pildid per-küsimus (dataURL-id)
+  const [images, setImages] = useState<Record<string, string[]>>({})
 
   // Päis
   const [date, setDate] = useState<string>(() => {
@@ -33,7 +39,13 @@ export default function App() {
   const [subDept, setSubDept] = useState('')
 
   const [qEdit, setQEdit] = useState<{
-    mode: 'add' | 'edit', id: string, department_id: string, text: string, clause: string, stds: string, guidance: string
+    mode: 'add' | 'edit',
+    id: string,
+    department_id: string,
+    text: string,
+    clause: string,
+    stds: string,
+    guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
   const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
 
@@ -71,41 +83,140 @@ export default function App() {
     return qs
   }, [dept, stds, query])
 
-  async function submitAudit() {
-    if (!dept) return
+  // Kokkuvõtte read (PE/MV)
+  const summary = useMemo(() => {
+    if (!dept) return []
+    const all = dept.questions
+    return all
+      .map(q => ({ q, a: answers[q.id] }))
+      .filter(x => x.a && (x.a.mv || x.a.pe) && (x.a.note?.trim() || x.a.evidence?.trim()))
+      .map(x => ({
+        id: x.q.id,
+        clause: x.q.clause || '',
+        type: x.a!.mv ? 'Mittevastavus' : 'Parendusettepanek',
+        content: (x.a!.note?.trim() || x.a!.evidence || '').trim(),
+        stds: x.q.stds
+      }))
+  }, [dept, answers])
 
-    const missing: Array<{ id: string; msg: string }> = []
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) missing.push({ id: 'hdr-date', msg: 'Palun vali kuupäev.' })
-    if (!auditor.trim()) missing.push({ id: 'hdr-auditor', msg: 'Palun täida auditeerija nimi.' })
-    if (!auditee.trim()) missing.push({ id: 'hdr-auditee', msg: 'Palun täida auditeeritav.' })
-    if (!auditeeTitle.trim()) missing.push({ id: 'hdr-title', msg: 'Palun täida auditeeritava amet.' })
-    if (missing.length) {
-      alert(missing[0].msg)
-      setTimeout(() => document.getElementById(missing[0].id)?.focus(), 0)
-      return
-    }
+  // --- util ---
+  function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
+    const el = e.currentTarget
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 1000) + 'px'
+  }
+  function handlePrint() { window.print() }
 
-    const bad = Object.entries(answers).find(([, a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
-    if (bad) {
-      const id = bad[0]
-      alert(`Küsimusel ${id} on PE või MV — palun täida "Märkus: PE/MV".`)
-      setTimeout(() => document.getElementById('note-' + id)?.focus(), 0)
-      return
-    }
-
-    const payload = {
-      department_id: dept.id,
-      standards: stds,
-      answers: Object.entries(answers).map(([id, a]) => ({ question_id: id, ...a })),
-    }
-    const r = await fetch(API + '/api/audits', {
-      method: 'POST',
+  // --- Admin POST/PUT/DEL helpers (used also by JSON import) ---
+  async function api<T=any>(url: string, method: string, body?: any): Promise<{ok:boolean; status:number; json:T|any}> {
+    const r = await fetch(API + url, {
+      method,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-      body: JSON.stringify(payload)
+      body: body ? JSON.stringify(body) : undefined
     })
-    const j = await r.json()
-    if (r.ok) alert('Audit salvestatud. ID: ' + j.audit_id)
-    else alert(j.error || 'Salvestus ebaõnnestus')
+    let j:any = null
+    try { j = await r.json() } catch { /* ignore */ }
+    return { ok: r.ok, status: r.status, json: j }
+  }
+
+  // --- Backend SCHEMA export/import (admin) ---
+  async function exportSchemaJSON() {
+    const s = await fetch(API + '/api/schema').then(r => r.json())
+    const blob = new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `schema-export-${new Date().toISOString().slice(0,10)}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  async function importSchemaJSON(file: File) {
+    if (!token || role !== 'admin') { alert('Vajalik admini sisselogimine.'); return }
+    try {
+      const text = await file.text()
+      const data: Schema = JSON.parse(text)
+
+      // upsert protsessid ja küsimused
+      for (const d of data.departments) {
+        // upsert department
+        let r = await api('/api/departments', 'POST', { id: d.id, name: d.name })
+        if (!r.ok && r.status !== 400) throw new Error(r.json?.error || 'department add failed')
+        if (!r.ok && r.status === 400) { // exists -> update name
+          await api('/api/departments/' + d.id, 'PUT', { name: d.name })
+        }
+        for (const q of d.questions) {
+          const payload = {
+            id: q.id, department_id: d.id, text: q.text,
+            clause: q.clause ?? '', stds: q.stds, guidance: q.guidance ?? ''
+          }
+          let rq = await api('/api/questions', 'POST', payload)
+          if (!rq.ok && rq.status !== 400) throw new Error(rq.json?.error || 'question add failed')
+          if (!rq.ok && rq.status === 400) {
+            await api('/api/questions/' + q.id, 'PUT', payload)
+          }
+        }
+      }
+      await refreshSchema()
+      alert('Import õnnestus.')
+    } catch (e:any) {
+      console.error(e)
+      alert('Import ebaõnnestus')
+    }
+  }
+
+  // --- Partial audit: save/load locally ---
+  function downloadPartial() {
+    const payload = {
+      header: { date, auditor, auditee, auditeeTitle, subDept, deptId, stds },
+      answers,
+      images
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `poolik-audit-${new Date().toISOString().slice(0,10)}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  async function openPartial(file: File) {
+    try {
+      const text = await file.text()
+      const j = JSON.parse(text)
+      const h = j.header || {}
+      setDate(h.date || date)
+      setAuditor(h.auditor || '')
+      setAuditee(h.auditee || '')
+      setAuditeeTitle(h.auditeeTitle || '')
+      setSubDept(h.subDept || '')
+      setDeptId(h.deptId || '')
+      setStds(h.stds || ['9001','14001','45001'])
+      setAnswers(j.answers || {})
+      setImages(j.images || {})
+      setQuestionsOpen(Boolean(h.deptId))
+      alert('Poolik audit laetud.')
+    } catch {
+      alert('Pooliku auditi avamine ebaõnnestus')
+    }
+  }
+
+  // --- Pildid (alla tõendite/märkuse) ---
+  function addImages(qid: string, files: FileList | null) {
+    if (!files || files.length === 0) return
+    const list = Array.from(files)
+    Promise.all(list.map(f => new Promise<string>((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result))
+      r.onerror = reject
+      r.readAsDataURL(f)
+    }))).then(urls => {
+      setImages(p => ({ ...p, [qid]: [...(p[qid]||[]), ...urls] }))
+    })
+  }
+  function removeImage(qid: string, idx: number) {
+    setImages(p => {
+      const arr = [...(p[qid]||[])]
+      arr.splice(idx,1)
+      return { ...p, [qid]: arr }
+    })
   }
 
   async function post(url: string, body: any, method = 'POST') {
@@ -121,104 +232,25 @@ export default function App() {
     setQEdit({ mode: 'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
   }
 
-  // --- poolik audit (failiks) ---
-  function halfSaveToFile() {
-    const payload = {
-      meta: { date, auditor, auditee, auditeeTitle, subDept, deptId, stds },
-      answers
-    }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `poolik-audit-${new Date().toISOString().slice(0,10)}.json`
-    document.body.appendChild(a); a.click(); a.remove()
-    URL.revokeObjectURL(a.href)
-  }
-  function halfLoadFromFile(file: File) {
-    const fr = new FileReader()
-    fr.onload = () => {
-      try {
-        const j = JSON.parse(String(fr.result || '{}'))
-        if (j?.meta) {
-          setDate(j.meta.date ?? date)
-          setAuditor(j.meta.auditor ?? '')
-          setAuditee(j.meta.auditee ?? '')
-          setAuditeeTitle(j.meta.auditeeTitle ?? '')
-          setSubDept(j.meta.subDept ?? '')
-          setDeptId(j.meta.deptId ?? '')
-          setStds(j.meta.stds ?? ['9001', '14001', '45001'])
-        }
-        if (j?.answers) setAnswers(j.answers)
-        alert('Poolik audit laaditud.')
-      } catch {
-        alert('Vigane fail.')
-      }
-    }
-    fr.readAsText(file)
-  }
-
-  // --- JSON eksport/import (admin) ---
-  async function exportJSON() {
-    try {
-      const r = await fetch(API + '/api/admin/export-json', { headers: { Authorization: 'Bearer ' + token! } })
-      if (!r.ok) throw new Error('export failed')
-      const blob = await r.blob()
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = 'glx-backup.json'
-      document.body.appendChild(a); a.click(); a.remove()
-      URL.revokeObjectURL(a.href)
-    } catch { alert('Eksport ebaõnnestus') }
-  }
-  async function importJSON(file: File) {
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const r = await fetch(API + '/api/admin/import-json', { method: 'POST', headers: { Authorization: 'Bearer ' + token! }, body: fd })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j?.error || 'import failed')
-      alert('Import õnnestus'); refreshSchema()
-    } catch { alert('Import ebaõnnestus') }
-  }
-
-  // --- UI utiliidid ---
-  function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
-    const el = e.currentTarget
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 1200) + 'px'
-  }
-  function handlePrint() { window.print() }
-
-  // standard pill värvid
-  function stdPillClass(s: Std, faded=false) {
-    const base = 'text-xs px-2 py-0.5 rounded border '
-    const map: Record<Std,string> = {
-      '9001': faded ? 'bg-blue-50  border-blue-300  text-blue-800'  : 'bg-blue-600  border-blue-700  text-white',
-      '14001':faded ? 'bg-green-50 border-green-300 text-green-800' : 'bg-green-600 border-green-700 text-white',
-      '45001':faded ? 'bg-red-50   border-red-300   text-red-800'   : 'bg-red-600   border-red-700   text-white',
-    }
-    return base + map[s]
-  }
-
   return (
     <div className="max-w-6xl mx-auto p-4">
-      {/* PRINT CSS – tekst murdub, pildid suured ja ei poolitu */}
+      {/* print-spetsiifiline CSS */}
       <style>{`
-        .print-text { display: none; }
         @media print {
           .no-print { display: none !important; }
-          textarea { display: none !important; }
-          .print-text { display: block !important; white-space: pre-wrap; border: 1px solid #000; padding: .5rem; }
-          .print-text.note { min-height: 10.4rem; } /* ~30% kõrgem */
-          .print-text.evidence { min-height: 8rem; }
-
-          .photo { page-break-inside: avoid; break-inside: avoid; margin-top:.25rem; }
-          .photo img { width: 100% !important; height: auto !important; }
+          .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
+          .no-break { break-inside: avoid; page-break-inside: avoid; }
+          textarea { border: 1px solid #000 !important; overflow: visible !important; }
+          select, input { border: 1px solid #000 !important; }
+          .ev-field   { min-height: 8rem !important; }
+          .note-field { min-height: 10.4rem !important; }
+          .img-print { width: 100% !important; height: auto !important; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
 
       <header className="flex items-center gap-3">
-        <img src="/logo.webp" className="h-10" alt="Glamox" />
+        <img src="/logo.webp" className="h-12" alt="Glamox" />
         <h1 className="text-2xl font-bold">Glamox GPE Siseaudit</h1>
         <div className="ml-auto flex items-center gap-2 no-print">
           {!token ? (
@@ -232,7 +264,28 @@ export default function App() {
         </div>
       </header>
 
-      <div className="mt-6" />
+      {/* Nuppuderiba (ülal) */}
+      <div className="mt-3 flex gap-2 items-center no-print">
+        <button
+          className="px-3 py-1 border rounded bg-green-100 border-green-600"
+          disabled={!deptId}
+          onClick={() => setQuestionsOpen(v => !v)}
+          title={!deptId ? 'Vali enne protsess' : ''}
+        >
+          {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
+        </button>
+
+        <button className="px-3 py-1 border rounded" onClick={downloadPartial}>Laadi alla poolik audit</button>
+        <label className="px-3 py-1 border rounded cursor-pointer">
+          Ava poolik audit
+          <input type="file" className="hidden" accept="application/json" onChange={e => e.target.files && openPartial(e.target.files[0])} />
+        </label>
+
+        <div className="ml-auto" />
+        <button className="px-3 py-1 border rounded" onClick={handlePrint}>Salvesta PDF</button>
+      </div>
+
+      <div className="mt-4" />
 
       {/* Päis */}
       <section className="mb-3 p-3 border rounded">
@@ -278,38 +331,23 @@ export default function App() {
               <div className="mt-1 flex gap-2 flex-wrap">
                 {deptStandards.length === 0
                   ? <span className="text-xs text-gray-500">–</span>
-                  : deptStandards.map(s => <span key={s} className={stdPillClass(s, true)}>ISO {s}</span>)}
+                  : deptStandards.map(s => (
+                    <span key={s} className={
+                      'text-xs border rounded px-2 py-0.5 ' +
+                      (s==='9001' ? 'bg-blue-100 border-blue-600' :
+                       s==='14001' ? 'bg-green-100 border-green-600' :
+                       'bg-red-100 border-red-600')
+                    }>ISO {s}</span>
+                  ))}
               </div>
             </div>
           )}
-        </div>
-
-        {/* Tegevusnupud – Ava küsimustik roheline; PDF viimane */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            className="px-3 py-1 rounded border bg-green-100 border-green-300"
-            disabled={!deptId}
-            onClick={() => setQuestionsOpen(v => !v)}
-            title={!deptId ? 'Vali enne protsess' : ''}
-          >
-            {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
-          </button>
-
-          <button className="px-3 py-1 rounded border bg-gray-100" onClick={halfSaveToFile}>Laadi alla poolik audit</button>
-
-          <label className="px-3 py-1 rounded border bg-gray-100 cursor-pointer">
-            Ava poolik audit
-            <input type="file" accept="application/json" className="hidden" onChange={e => e.target.files && halfLoadFromFile(e.target.files[0])} />
-          </label>
-
-          <div className="ml-auto" />
-
-          <button className="px-3 py-1 rounded border bg-gray-100" onClick={handlePrint}>Salvesta PDF</button>
         </div>
       </section>
 
       {!schema ? <div>Laen skeemi...</div> : (
         <div className="grid md:grid-cols-4 gap-4">
+          {/* Vasak külgriba */}
           <div className="space-y-3 no-print">
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Standard</label>
@@ -334,6 +372,7 @@ export default function App() {
             {role === 'admin' && (
               <div className="p-3 border rounded space-y-3">
                 <div className="font-semibold">Redigeerimine</div>
+
                 <div>
                   <div className="text-xs">Protsess</div>
                   <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
@@ -355,24 +394,25 @@ export default function App() {
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
                     ) : (
                       <>
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* JSON eksport/import */}
-                <div className="pt-2 border-t">
+                {/* Backend schema varundus/taastus */}
+                <div className="border-t pt-2">
                   <div className="text-xs font-semibold mb-1">Varunda / taasta (JSON)</div>
                   <div className="flex gap-2">
-                    <button className="px-2 py-1 border rounded" onClick={exportJSON}>Ekspordi JSON</button>
+                    <button className="px-2 py-1 border rounded" onClick={exportSchemaJSON}>Ekspordi JSON</button>
                     <label className="px-2 py-1 border rounded cursor-pointer">
                       Impordi JSON
-                      <input type="file" accept="application/json" className="hidden" onChange={e => e.target.files && importJSON(e.target.files[0])} />
+                      <input type="file" className="hidden" accept="application/json"
+                        onChange={e => e.target.files && importSchemaJSON(e.target.files[0])}/>
                     </label>
                   </div>
                 </div>
@@ -380,11 +420,12 @@ export default function App() {
             )}
           </div>
 
+          {/* Põhisisu */}
           <div className="md:col-span-3 space-y-3">
             {!deptId ? (
               <div>Vali protsess päisest, seejärel vajuta “Ava küsimustik”.</div>
             ) : !questionsOpen ? (
-              <div>Vajuta päise all olevale nupule “Ava küsimustik”.</div>
+              <div>Vajuta ülal olevale nupule “Ava küsimustik”.</div>
             ) : !dept ? (
               <div>Laen protsessi andmeid…</div>
             ) : visible.length === 0 ? (
@@ -392,13 +433,18 @@ export default function App() {
             ) : (
               visible.map((q) => {
                 const a = answers[q.id] || {}
-                const photos = a.photos || []
+                const imgs = images[q.id] || []
                 return (
-                  <div key={q.id} className="p-3 border rounded">
+                  <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
                       {q.stds?.length > 0 && q.stds.map(s => (
-                        <span key={s} className={stdPillClass(s, true)}>ISO {s}</span>
+                        <span key={s} className={
+                          'text-xs border px-2 py-0.5 rounded ' +
+                          (s==='9001' ? 'bg-blue-100 border-blue-600' :
+                           s==='14001' ? 'bg-green-100 border-green-600' :
+                           'bg-red-100 border-red-600')
+                        }>ISO {s}</span>
                       ))}
                       {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
                       <span className="ml-auto flex items-center gap-1">
@@ -411,7 +457,7 @@ export default function App() {
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    {/* STAATUS */}
+                    {/* Staatuse checkboxid */}
                     <div className="mt-2 flex gap-3 flex-wrap items-center">
                       <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
                         <input
@@ -462,53 +508,17 @@ export default function App() {
                       </label>
                     </div>
 
-                    {/* Piltide lisamine (sessioonis) */}
-                    <div className="mt-2">
-                      <label className="px-2 py-1 border rounded cursor-pointer bg-gray-50 no-print">
-                        Lisa pilt
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => {
-                            const f = e.target.files?.[0]; if (!f) return
-                            const fr = new FileReader()
-                            fr.onload = () => {
-                              setAnswers(p => {
-                                const cur = p[q.id] || {}
-                                const list = (cur.photos || []).concat(String(fr.result))
-                                return { ...p, [q.id]: { ...cur, photos: list } }
-                              })
-                            }
-                            fr.readAsDataURL(f)
-                            e.currentTarget.value = ''
-                          }}
-                        />
-                      </label>
-                      {photos.length > 0 && (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
-                          {photos.map((src, i) => (
-                            <figure key={i} className="photo border rounded p-1">
-                              <img src={src} alt={`foto-${i+1}`} className="w-full h-auto" />
-                              <figcaption className="text-[11px] text-gray-600 mt-1">Foto {i+1}</figcaption>
-                            </figure>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Teksti väljad – ekraanil textarea; prindis .print-text, mis murdub */}
-                    <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
+                    {/* Tõendid / Märkus */}
+                    <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
                         <textarea
-                          className="border rounded px-2 py-1 w-full min-h-32 resize-y"
+                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field"
                           placeholder="Tõendid"
                           value={a.evidence || ''}
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                         />
-                        <div className="print-text evidence">{a.evidence || ''}</div>
                       </div>
 
                       <div className="md:col-span-2">
@@ -516,7 +526,7 @@ export default function App() {
                         <textarea
                           id={'note-' + q.id}
                           className={
-                            'border rounded px-2 py-1 w-full min-h-32 resize-y ' +
+                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' +
                             (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                           }
                           placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
@@ -524,16 +534,60 @@ export default function App() {
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
-                        <div className="print-text note">{a.note || ''}</div>
                       </div>
+                    </div>
+
+                    {/* PILDID – allpool tõenditest/märkustest */}
+                    <div className="mt-2">
+                      <div className="text-xs font-semibold mb-1">Lisa pilt</div>
+                      <input type="file" accept="image/*" multiple onChange={e => addImages(q.id, e.target.files)} className="no-print" />
+                      {imgs.length > 0 && (
+                        <div className="mt-2 grid md:grid-cols-2 gap-2">
+                          {imgs.map((src, i) => (
+                            <div key={i} className="border rounded p-1 no-break">
+                              <img src={src} alt={`Foto ${i+1}`} className="w-full h-auto img-print" />
+                              <div className="text-xs text-gray-600 mt-1">Foto {i+1}</div>
+                              <button className="no-print text-xs underline mt-1" onClick={() => removeImage(q.id, i)}>Eemalda</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
               })
             )}
-            <div className="flex justify-end gap-2 no-print">
-              <button className="px-4 py-2 rounded border" onClick={submitAudit}>Salvesta audit</button>
-            </div>
+
+            {/* KOKKUVÕTE */}
+            {questionsOpen && summary.length > 0 && (
+              <div className="p-3 border rounded print-avoid-break">
+                <div className="font-semibold mb-2">Kokkuvõte — Parendusettepanekud ja Mittevastavused</div>
+                <div className="space-y-2">
+                  {summary.map((s, idx) => (
+                    <div key={idx} className="text-sm border rounded p-2">
+                      <div className="flex flex-wrap gap-2 text-xs mb-1">
+                        <span className="border px-2 py-0.5 rounded">Küsimus: {s.id}</span>
+                        {s.stds?.map(st => (
+                          <span key={st} className={
+                            'border px-2 py-0.5 rounded ' +
+                            (st==='9001' ? 'bg-blue-100 border-blue-600' :
+                             st==='14001' ? 'bg-green-100 border-green-600' :
+                             'bg-red-100 border-red-600')
+                          }>ISO {st}</span>
+                        ))}
+                        {s.clause && <span className="border px-2 py-0.5 rounded">Nõue: {s.clause}</span>}
+                        <span className={'border px-2 py-0.5 rounded ' + (s.type==='Mittevastavus' ? 'bg-red-100 border-red-600' : 'bg-blue-100 border-blue-600')}>
+                          {s.type}
+                        </span>
+                      </div>
+                      <div className="whitespace-pre-wrap">{s.content}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* alumist “Salvesta audit” nuppu EI lisata */}
           </div>
         </div>
       )}
@@ -551,6 +605,7 @@ function Excl({ color, title }: { color: 'red' | 'blue'; title: string }) {
     </span>
   )
 }
+
 function Check({ color, title }: { color: 'green'; title: string }) {
   return (
     <span title={title} className="text-green-600" aria-label={title}>
