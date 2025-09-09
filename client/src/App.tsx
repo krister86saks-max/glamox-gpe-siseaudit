@@ -195,16 +195,18 @@ export default function App() {
     <div className="max-w-6xl mx-auto p-4">
       {/* PRINT CSS */}
       <style>{`
+        .print-only { display: none; }
         @media print {
           .no-print { display: none !important; }
+          .print-only { display: block !important; }
           .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
-          textarea { border: 1px solid #000 !important; }
+          textarea { display: none !important; } /* tekstialad peidetakse, näitame nende peeglit */
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .ev-field   { min-height: 8rem !important; }
           .note-field { min-height: 10.4rem !important; } /* ~30% kõrgem */
-          .img-box { break-inside: avoid; page-break-inside: avoid; }
-          .img-box img { max-width: 100%; height: auto; }
+          .img-box { break-inside: avoid; page-break-inside: avoid; width: min(960px, 100%) !important; }
+          .img-box img { width: 100% !important; height: auto !important; }
         }
       `}</style>
 
@@ -416,25 +418,37 @@ export default function App() {
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
+
+                        {/* Ekraan: textarea */}
                         <textarea
-                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field"
+                          className="no-print border rounded px-2 py-1 w-full min-h-32 resize-y ev-field"
                           placeholder="Tõendid"
                           value={a.evidence || ''}
                           onInput={autoResize}
                           onChange={e=>setAnswers(p=>({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                         />
+                        {/* Print: murtav peegel */}
+                        <div className="print-only border rounded px-2 py-1 w-full ev-field whitespace-pre-wrap">
+                          {(a.evidence ?? '').trim() || ' '}
+                        </div>
                       </div>
 
                       <div className="md:col-span-2">
                         <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
+
+                        {/* Ekraan: textarea */}
                         <textarea
                           id={'note-' + q.id}
-                          className={'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' + (((a.mv||a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')}
+                          className={'no-print border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' + (((a.mv||a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')}
                           placeholder={((a.mv||a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
                           value={a.note || ''}
                           onInput={autoResize}
                           onChange={e=>setAnswers(p=>({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
+                        {/* Print: murtav peegel */}
+                        <div className={'print-only border rounded px-2 py-1 w-full note-field whitespace-pre-wrap ' + (((a.mv||a.pe) && !(a.note && a.note.trim())) ? 'border-red-500' : '')}>
+                          {(a.note ?? '').trim() || ' '}
+                        </div>
                       </div>
                     </div>
 
@@ -451,7 +465,7 @@ export default function App() {
                         <div className="mt-2 flex flex-wrap gap-2">
                           {imgs.map(img => (
                             <div key={img.id} className="img-box border rounded p-1" style={{width:'240px'}}>
-                              <img src={img.dataUrl} alt={img.name} />
+                              <img src={img.dataUrl} alt={img.name} style={{maxWidth:'100%', height:'auto'}} />
                               <div className="text-[11px] mt-1 truncate">{img.name}</div>
                               <button className="no-print mt-1 text-xs px-2 py-0.5 border rounded" onClick={()=>removeImage(q.id, img.id)}>Eemalda</button>
                             </div>
@@ -495,4 +509,5 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail:string
     </div>
   )
 }
+
 
