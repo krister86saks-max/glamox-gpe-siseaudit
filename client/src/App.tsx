@@ -27,11 +27,15 @@ export default function App() {
     const d = new Date(); const mm = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0')
     return `${d.getFullYear()}-${mm}-${dd}`
   })
-  const [auditor, setAuditor] = useState(''); const [auditee, setAuditee] = useState('')
-  const [auditeeTitle, setAuditeeTitle] = useState(''); const [subDept, setSubDept] = useState('')
+  const [auditor, setAuditor] = useState('')
+  const [auditee, setAuditee] = useState('')
+  const [auditeeTitle, setAuditeeTitle] = useState('')
+  const [subDept, setSubDept] = useState('')
 
   // Admin edit
-  const [qEdit, setQEdit] = useState<{mode:'add'|'edit', id:string, department_id:string, text:string, clause:string, stds:string, guidance:string}>({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''})
+  const [qEdit, setQEdit] = useState<{mode:'add'|'edit', id:string, department_id:string, text:string, clause:string, stds:string, guidance:string}>(
+    {mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}
+  )
   const [depEdit, setDepEdit] = useState<{ id:string; name:string }>({ id:'', name:'' })
 
   async function refreshSchema() {
@@ -48,10 +52,11 @@ export default function App() {
 
   const dept = schema?.departments.find(d => d.id === deptId)
 
-  // Protsessi küsimuste standardid (päises kuvamiseks)
+  // Protsessi küsimuste standardid (päises)
   const deptStandards = useMemo<Std[]>(() => {
     if (!dept) return []
-    const set = new Set<Std>(); for (const q of dept.questions) for (const s of q.stds) set.add(s as Std)
+    const set = new Set<Std>()
+    for (const q of dept.questions) for (const s of q.stds) set.add(s as Std)
     return Array.from(set).sort() as Std[]
   }, [dept])
 
@@ -84,11 +89,17 @@ export default function App() {
     const list = Array.from(files)
     const readers = list.map(f => new Promise<ImgItem>((resolve, reject) => {
       const fr = new FileReader()
-      fr.onload = () => resolve({ id: qid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2), name: f.name, dataUrl: String(fr.result) })
-      fr.onerror = reject
+      fr.onload = () => resolve({
+        id: qid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+        name: f.name,
+        dataUrl: String(fr.result)
+      })
+      fr.onerror = () => reject(fr.error)
       fr.readAsDataURL(f)
     }))
-    Promise.all(readers).then(items => setImages(p => ({ ...p, [qid]: [ ...(p[qid]||[]), ...items ] }))))
+    Promise.all(readers).then(items => {
+      setImages(prev => ({ ...prev, [qid]: [ ...(prev[qid] || []), ...items ] }))
+    })
   }
   function removeImage(qid: string, imgId: string) {
     setImages(p => ({ ...p, [qid]: (p[qid]||[]).filter(x => x.id !== imgId) }))
@@ -128,7 +139,6 @@ export default function App() {
       const data: Schema = JSON.parse(text)
       // osakonnad
       for (const d of data.departments) {
-        // proovi luua; kui eksisteerib, uuenda
         let r = await fetch(API + '/api/departments', {
           method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + token },
           body: JSON.stringify({ id: d.id, name: d.name })
@@ -367,7 +377,7 @@ export default function App() {
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
-                      <span className="text-xs border px-2 py-0.5 rounded bg-gray-50">Q-001</span>
+                      <span className="text-xs border px-2 py-0.5 rounded bg-gray-50">{q.id}</span>
                       {q.stds?.length > 0 && q.stds.map(stdChip)}
                       {q.clause && <span className="text-xs border px-2 py-0.5 rounded bg-gray-50">Standardi nõue: {q.clause}</span>}
                       <span className="ml-auto flex items-center gap-1">
@@ -485,5 +495,4 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail:string
     </div>
   )
 }
-
 
