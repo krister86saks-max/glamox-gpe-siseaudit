@@ -20,6 +20,12 @@ export default function App() {
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
   const [query, setQuery] = useState('')
 
+  // Piltide lokaalne „sessiooni”-hoidla (ainult brauseris)
+  const [imagesByQ, setImagesByQ] = useState<Record<string, string[]>>(() => {
+    try { return JSON.parse(sessionStorage.getItem('qImages') || '{}') } catch { return {} }
+  })
+  useEffect(() => { sessionStorage.setItem('qImages', JSON.stringify(imagesByQ)) }, [imagesByQ])
+
   // Päis
   const [date, setDate] = useState<string>(() => {
     const d = new Date()
@@ -137,6 +143,24 @@ export default function App() {
 
   function handlePrint() { window.print() }
 
+  // --- piltide lisamine/ eemaldamine (ainult sessioonis) ---
+  function fileToDataUrl(f: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(fr.result as string)
+      fr.onerror = reject
+      fr.readAsDataURL(f)
+    })
+  }
+  async function addImages(qid: string, files: FileList) {
+    const imgs = Array.from(files).filter(f => f.type.startsWith('image/'))
+    const dataUrls = await Promise.all(imgs.map(fileToDataUrl))
+    setImagesByQ(p => ({ ...p, [qid]: [ ...(p[qid] || []), ...dataUrls ] }))
+  }
+  function removeImage(qid: string, idx: number) {
+    setImagesByQ(p => ({ ...p, [qid]: (p[qid] || []).filter((_, i) => i !== idx) }))
+  }
+
   // --- JSON export/import ---
   async function exportJSON() {
     try {
@@ -177,6 +201,7 @@ export default function App() {
 
   return (
     <div className="max-w-6xl mx-auto p-4">
+      {/* print-spetsiifiline CSS */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -186,6 +211,8 @@ export default function App() {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .ev-field   { min-height: 8rem !important; }
           .note-field { min-height: 10.4rem !important; }
+          .q-images, .q-images > div, .q-images img { break-inside: avoid; page-break-inside: avoid; }
+          .q-images img { max-width: 100% !important; height: auto !important; }
         }
       `}</style>
 
@@ -366,6 +393,7 @@ export default function App() {
             ) : (
               visible.map((q) => {
                 const a = answers[q.id] || {}
+                const imgs = imagesByQ[q.id] || []
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
@@ -463,6 +491,39 @@ export default function App() {
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
+                      </div>
+                    </div>
+
+                    {/* Pildid (ainult sessioonis) */}
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-semibold">Pildid (ei salvestata serverisse)</div>
+                        <div className="no-print">
+                          <input
+                            id={`img-${q.id}`}
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            multiple
+                            onChange={e => { if (e.target.files) addImages(q.id, e.target.files); e.currentTarget.value = '' }}
+                          />
+                          <label htmlFor={`img-${q.id}`} className="px-2 py-1 border rounded cursor-pointer">Lisa pilt</label>
+                        </div>
+                      </div>
+                      <div className="q-images mt-2 grid grid-cols-2 gap-2">
+                        {imgs.length === 0 && <div className="text-xs text-gray-500">Pole pilte.</div>}
+                        {imgs.map((src, idx) => (
+                          <div key={idx} className="relative">
+                            <a href={src} target="_blank" rel="noreferrer">
+                              <img src={src} alt={`Küsimus ${q.id} pilt ${idx+1}`} className="w-full h-auto rounded border" />
+                            </a>
+                            <button
+                              className="no-print absolute top-1 right-1 bg-white/80 border rounded px-1 text-xs"
+                              onClick={() => removeImage(q.id, idx)}
+                              title="Eemalda"
+                            >x</button>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
