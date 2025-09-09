@@ -16,9 +16,6 @@ export default function App() {
   // osakond on vaikimisi tühi
   const [deptId, setDeptId] = useState<string>('')
 
-  // login vormi nähtavus
-  const [showLogin, setShowLogin] = useState(false)
-
   // küsimustiku avamise lipp
   const [questionsOpen, setQuestionsOpen] = useState(false)
 
@@ -63,13 +60,7 @@ export default function App() {
       body: JSON.stringify({ email, password })
     })
     const j = await r.json()
-    if (r.ok) {
-      setToken(j.token)
-      setRole(j.role)
-      setShowLogin(false) // peida vorm pärast edukat loginit
-    } else {
-      alert(j.error || 'login failed')
-    }
+    if (r.ok) { setToken(j.token); setRole(j.role) } else alert(j.error || 'invalid credentials')
   }
 
   const dept = schema?.departments.find(d => d.id === deptId)
@@ -78,9 +69,7 @@ export default function App() {
   const deptStandards = useMemo<Std[]>(() => {
     if (!dept) return []
     const set = new Set<Std>()
-    for (const q of dept.questions) {
-      for (const s of q.stds) set.add(s)
-    }
+    for (const q of dept.questions) for (const s of q.stds) set.add(s)
     return Array.from(set).sort() as Std[]
   }, [dept])
 
@@ -154,6 +143,7 @@ export default function App() {
     })
   }
 
+  // Autokõrgus ekraanil (prindis kasutame <div> peeglit)
   function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
     const el = e.currentTarget
     el.style.height = 'auto'
@@ -166,12 +156,15 @@ export default function App() {
 
   return (
     <div className="max-w-6xl mx-auto p-4">
-      {/* Väike print-CSS: peida .no-print asjad prindis */}
+      {/* Print-CSS: peida/no-print, näita/only-print, lase pikad kastid murduda */}
       <style>{`
+        .only-print { display: none; }
         @media print {
           .no-print { display: none !important; }
+          .only-print { display: block !important; }
           .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
-          textarea { border: 1px solid #000 !important; }
+          .print-box { white-space: pre-wrap; border: 1px solid #000; padding: 6px; min-height: 120px; }
+          textarea { display: none !important; } /* turvaliselt, kui mõni jäi ilma .no-print'ita */
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
@@ -180,23 +173,11 @@ export default function App() {
       <header className="flex items-center gap-3">
         <img src="/logo.webp" className="h-8" alt="Glamox" />
         <h1 className="text-2xl font-bold">Glamox GPE Siseaudit</h1>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 no-print">
           {!token ? (
-            <div className="relative no-print">
-              <button
-                className="px-3 py-1 border rounded"
-                onClick={() => setShowLogin(v => !v)}
-              >
-                Login
-              </button>
-              {showLogin && (
-                <div className="absolute right-0 top-full mt-2 w-[320px] bg-white border rounded p-3 shadow-md z-10">
-                  <LoginForm onLogin={login} />
-                </div>
-              )}
-            </div>
+            <LoginForm defaultEmail="" defaultPass="" onLogin={login} />
           ) : (
-            <div className="flex items-center gap-2 no-print">
+            <div className="flex items-center gap-2">
               <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
               <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
             </div>
@@ -244,17 +225,15 @@ export default function App() {
             <input id="hdr-subdept" className="w-full border rounded px-2 py-1" placeholder="nt alamosakond" value={subDept} onChange={e => setSubDept(e.target.value)} />
           </div>
 
+          {/* Kohaldatavad standardid */}
           {dept && (
             <div className="md:col-span-2">
               <div className="block text-xs font-semibold">Kohaldatavad standardid</div>
               <div className="mt-1 flex gap-2 flex-wrap">
-                {deptStandards.length === 0 ? (
-                  <span className="text-xs text-gray-500">–</span>
-                ) : (
-                  deptStandards.map(s => (
-                    <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>
-                  ))
-                )}
+                {deptStandards.length === 0
+                  ? <span className="text-xs text-gray-500">–</span>
+                  : deptStandards.map(s => <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>)
+                }
               </div>
             </div>
           )}
@@ -349,6 +328,7 @@ export default function App() {
                     <div className="flex items-start gap-2 flex-wrap">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
 
+                      {/* standardimärgid küsimuse juures */}
                       {q.stds?.length > 0 && q.stds.map(s => (
                         <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
                       ))}
@@ -422,19 +402,25 @@ export default function App() {
                       </label>
                     </div>
 
+                    {/* Tõendid & Märkus — ekraanil textarea, prindis peegeldiv */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
+                      {/* Tõendid */}
                       <textarea
-                        className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y"
+                        className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y no-print"
                         placeholder="Tõendid"
                         value={a.evidence || ''}
                         onInput={autoResize}
                         onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                       />
+                      <div className="only-print print-box md:col-span-1">
+                        {(a.evidence || '').trim() || '\u00A0'}
+                      </div>
 
+                      {/* Märkus */}
                       <textarea
                         id={'note-' + q.id}
                         className={
-                          'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y ' +
+                          'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y no-print ' +
                           (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                         }
                         placeholder={
@@ -446,6 +432,9 @@ export default function App() {
                         onInput={autoResize}
                         onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                       />
+                      <div className="only-print print-box md:col-span-2">
+                        {(a.note || '').trim() || '\u00A0'}
+                      </div>
                     </div>
                   </div>
                 )
@@ -483,25 +472,15 @@ function Check({ color, title }: { color: 'green'; title: string }) {
   )
 }
 
-function LoginForm({
-  defaultEmail = '',
-  defaultPass = '',
-  onLogin
-}: {
-  defaultEmail?: string
-  defaultPass?: string
-  onLogin: (e: string, p: string) => void
-}) {
+function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: string; defaultPass: string; onLogin: (e: string, p: string) => void }) {
   const [email, setEmail] = useState(defaultEmail)
   const [pass, setPass] = useState(defaultPass)
+  const canSubmit = email.trim() && pass.trim()
   return (
-    <div className="flex flex-col gap-2">
-      <input className="border rounded px-2 py-1" placeholder="E-post" value={email} onChange={e => setEmail(e.target.value)} />
-      <input type="password" className="border rounded px-2 py-1" placeholder="Parool" value={pass} onChange={e => setPass(e.target.value)} />
-      <button className="px-3 py-1 border rounded" onClick={() => onLogin(email, pass)}>Logi sisse</button>
+    <div className="flex items-center gap-2">
+      <input className="border rounded px-2 py-1" placeholder="e-post" value={email} onChange={e => setEmail(e.target.value)} />
+      <input type="password" className="border rounded px-2 py-1" placeholder="parool" value={pass} onChange={e => setPass(e.target.value)} />
+      <button disabled={!canSubmit} className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => onLogin(email, pass)}>Logi sisse</button>
     </div>
   )
 }
-
-
-
