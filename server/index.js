@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 
 const app = express()
-app.use(express.json({ limit: '10mb' }))
+app.use(express.json())
 
 app.use(helmet())
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }))
@@ -22,10 +22,6 @@ app.use(cors())
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 
-// *** PERSISTENTSUS ***
-// Kui kunagi lisad Renderis Persistent Diski (mount path tavaliselt /var/data),
-// sea keskkonnamuutuja DATA_DIR=/var/data.
-// Tasuta plaanil failid ei säili deploy vahel.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataDir = process.env.DATA_DIR || process.cwd()
 const dbFile = path.join(dataDir, 'data.json')
@@ -42,12 +38,7 @@ if (ADMIN_EMAIL && ADMIN_PASSWORD) {
   const existing = db.data.users.find(u => u.email === ADMIN_EMAIL)
   const password_hash = bcrypt.hashSync(ADMIN_PASSWORD, 10)
   if (!existing) {
-    db.data.users.push({
-      id: crypto.randomUUID(),
-      email: ADMIN_EMAIL,
-      role: 'admin',
-      password_hash,
-    })
+    db.data.users.push({ id: crypto.randomUUID(), email: ADMIN_EMAIL, role: 'admin', password_hash })
     await save()
     console.log('Bootstrap: loodud admin kasutaja ->', ADMIN_EMAIL)
   } else if (!bcrypt.compareSync(ADMIN_PASSWORD, existing.password_hash)) {
@@ -153,23 +144,30 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
   res.json({ audit: a, answers: ans })
 })
 
-// --- EXPORT / IMPORT (backup taastamiseks tasuta plaanil) ---
+// --- Export / Import (JSON) ---
 app.get('/api/export', authRequired, requireRole('admin'), (req,res) => {
-  const { users, ...rest } = db.data   // kasutajaid ei ekspordi (paroolirisk); vajadusel saab lisada
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.setHeader('Content-Disposition', 'attachment; filename="siseaudit-backup.json"')
-  res.send(JSON.stringify(rest, null, 2))
+  const { departments, questions } = db.data
+  res.json({ departments, questions })
 })
 
 app.post('/api/import', authRequired, requireRole('admin'), async (req,res) => {
-  const { departments, questions, audits, answers } = req.body || {}
-  if (!Array.isArray(departments) || !Array.isArray(questions) || !Array.isArray(audits) || !Array.isArray(answers)) {
+  const { departments, questions, mode = 'replace' } = req.body || {}
+  if (!Array.isArray(departments) || !Array.isArray(questions)) {
     return res.status(400).json({ error: 'invalid payload' })
   }
-  db.data.departments = departments
-  db.data.questions   = questions
-  db.data.audits      = audits
-  db.data.answers     = answers
+  if (mode === 'replace') {
+    db.data.departments = departments
+    db.data.questions = questions
+  } else {
+    // merge by id
+    const depMap = new Map(db.data.departments.map(d => [d.id, d]))
+    for (const d of departments) depMap.set(d.id, d)
+    db.data.departments = Array.from(depMap.values())
+
+    const qMap = new Map(db.data.questions.map(q => [q.id, q]))
+    for (const q of questions) qMap.set(q.id, q)
+    db.data.questions = Array.from(qMap.values())
+  }
   await save()
   res.json({ ok: true })
 })
@@ -181,3 +179,4 @@ app.get(/^(?!\/api).*/, (req,res) => {
 })
 
 app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+

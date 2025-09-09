@@ -45,6 +45,7 @@ export default function App() {
     guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
   const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
+  const [importMode, setImportMode] = useState<'replace'|'merge'>('replace')
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
@@ -150,6 +151,38 @@ export default function App() {
   const chipBase   = 'text-xs px-2 py-0.5 rounded border'
   const chipMuted  = `${chipBase} bg-gray-100 text-gray-800 border-gray-300`
 
+  // --- eksport/import kliendis ---
+  async function exportJSON() {
+    if (!token) return alert('Logi sisse')
+    const r = await fetch(API + '/api/export', { headers: { Authorization: 'Bearer ' + token } })
+    if (!r.ok) return alert('Export ebaõnnestus')
+    const data = await r.json()
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'gpe-schema.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  function importJSON(files: FileList | null) {
+    if (!token) { alert('Logi sisse'); return }
+    if (!files || !files.length) return
+    const f = files[0]
+    f.text().then(txt => {
+      let parsed
+      try { parsed = JSON.parse(txt) } catch { alert('Vigane JSON'); return }
+      fetch(API + '/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ mode: importMode, ...parsed })
+      })
+        .then(r => r.json())
+        .then(j => { if (j.ok) { alert('Import OK'); refreshSchema() } else alert(j.error || 'Import ebaõnnestus') })
+        .catch(() => alert('Import ebaõnnestus'))
+    })
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-4">
       {/* print-spetsiifiline CSS */}
@@ -160,10 +193,8 @@ export default function App() {
           textarea { border: 1px solid #000 !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-          /* >>> PDF: jätame veerud samaks; tõendid baasmin-kõrgus, märkus ~30% kõrgem */
-          .ev-field   { min-height: 8rem !important; }     /* ~Tõendite baas */
-          .note-field { min-height: 10.4rem !important; }  /* 8rem * 1.3 */
+          .ev-field   { min-height: 8rem !important; }
+          .note-field { min-height: 10.4rem !important; }
         }
       `}</style>
 
@@ -272,39 +303,60 @@ export default function App() {
             </div>
 
             {role === 'admin' && (
-              <div className="p-3 border rounded space-y-3">
-                <div className="font-semibold">Redigeerimine</div>
-                <div>
-                  <div className="text-xs">Protsess</div>
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
-                  <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+              <>
+                <div className="p-3 border rounded space-y-3">
+                  <div className="font-semibold">Redigeerimine</div>
+                  <div>
+                    <div className="text-xs">Protsess</div>
+                    <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
+                    <div className="mt-1 space-x-2">
+                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                      <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
+                    <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
+                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
+                    <div className="space-x-2">
+                      {qEdit.mode === 'add' ? (
+                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      ) : (
+                        <>
+                          <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                          <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
-                  <div className="space-x-2">
-                    {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
-                    ) : (
-                      <>
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
-                      </>
-                    )}
+                {/* VARUNDUS / JSON */}
+                <div className="p-3 border rounded space-y-2">
+                  <div className="font-semibold">Varundus (JSON)</div>
+                  <div className="flex items-center gap-2">
+                    <button className="px-2 py-1 border rounded" onClick={exportJSON}>Ekspordi JSON</button>
+                    <select className="border rounded px-2 py-1" value={importMode} onChange={e=>setImportMode(e.target.value as 'replace'|'merge')}>
+                      <option value="replace">Import: asenda</option>
+                      <option value="merge">Import: ühenda</option>
+                    </select>
+                    <label className="px-2 py-1 border rounded cursor-pointer">
+                      Impordi JSON
+                      <input type="file" accept="application/json,.json" className="hidden" onChange={e=>importJSON(e.target.files)} />
+                    </label>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    Ekspordi/impordi <b>departments</b> ja <b>questions</b>. Import lubatud vaid adminile.
                   </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -323,17 +375,11 @@ export default function App() {
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
-                      {/* helehall id-kiip */}
                       <span className={chipMuted}>{q.id}</span>
-
-                      {/* värvikoodiga standardi kiibid */}
                       {q.stds?.length > 0 && q.stds.map(s => (
                         <span key={s} className={`${chipBase} ${stdChipClass(s)}`}>ISO {s}</span>
                       ))}
-
-                      {/* helehall klausel */}
                       {q.clause && <span className={chipMuted}>Standardi nõue: {q.clause}</span>}
-
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
@@ -344,7 +390,6 @@ export default function App() {
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    {/* väljad */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
