@@ -1,3 +1,4 @@
+// -- APP.TSX KOGU FAIL --
 import React, { useEffect, useMemo, useState } from 'react'
 
 type Std = '9001' | '14001' | '45001'
@@ -13,43 +14,33 @@ export default function App() {
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
   const [schema, setSchema] = useState<Schema | null>(null)
 
-  // osakond on vaikimisi tühi
-  const [deptId, setDeptId] = useState<string>('')
-
-  // küsimustiku avamise lipp
-  const [questionsOpen, setQuestionsOpen] = useState(false)
+  const [deptId, setDeptId] = useState<string>('')            // osakond vaikimisi tühi
+  const [questionsOpen, setQuestionsOpen] = useState(false)   // nupu “Ava küsimustik” lipp
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
   const [query, setQuery] = useState('')
 
-  // Päise väljad
+  // Päis
   const [date, setDate] = useState<string>(() => {
     const d = new Date()
     const mm = String(d.getMonth() + 1).padStart(2, '0')
     const dd = String(d.getDate()).padStart(2, '0')
     return `${d.getFullYear()}-${mm}-${dd}`
   })
-  const [auditor, setAuditor] = useState<string>('')
-  const [auditee, setAuditee] = useState<string>('')
-  const [auditeeTitle, setAuditeeTitle] = useState<string>('')
-  const [subDept, setSubDept] = useState<string>('')
+  const [auditor, setAuditor] = useState('')
+  const [auditee, setAuditee] = useState('')
+  const [auditeeTitle, setAuditeeTitle] = useState('')
+  const [subDept, setSubDept] = useState('')
 
   const [qEdit, setQEdit] = useState<{
-    mode: 'add' | 'edit',
-    id: string,
-    department_id: string,
-    text: string,
-    clause: string,
-    stds: string,
-    guidance: string
-  }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
+    mode: 'add'|'edit', id: string, department_id: string, text: string, clause: string, stds: string, guidance: string
+  }>({ mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:'' })
   const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
     setSchema(s)
-    // NB! Ei vali automaatselt osakonda; kasutaja valib ise.
   }
   useEffect(() => { refreshSchema() }, [])
 
@@ -65,7 +56,7 @@ export default function App() {
 
   const dept = schema?.departments.find(d => d.id === deptId)
 
-  // Päises kuvamiseks: millised standardid on valitud osakonna KÜSIMUSTES (unikaalne hulk)
+  // Kohaldatavad standardid päisesse
   const deptStandards = useMemo<Std[]>(() => {
     if (!dept) return []
     const set = new Set<Std>()
@@ -84,25 +75,15 @@ export default function App() {
 
   async function submitAudit() {
     if (!dept) return
-
     const missing: Array<{ id: string; msg: string }> = []
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) missing.push({ id: 'hdr-date', msg: 'Palun vali kuupäev.' })
     if (!auditor.trim()) missing.push({ id: 'hdr-auditor', msg: 'Palun täida auditeerija nimi.' })
     if (!auditee.trim()) missing.push({ id: 'hdr-auditee', msg: 'Palun täida auditeeritav.' })
     if (!auditeeTitle.trim()) missing.push({ id: 'hdr-title', msg: 'Palun täida auditeeritava amet.' })
-    if (missing.length) {
-      alert(missing[0].msg)
-      setTimeout(() => document.getElementById(missing[0].id)?.focus(), 0)
-      return
-    }
+    if (missing.length) { alert(missing[0].msg); setTimeout(() => document.getElementById(missing[0].id)?.focus(), 0); return }
 
     const bad = Object.entries(answers).find(([, a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
-    if (bad) {
-      const id = bad[0]
-      alert(`Küsimusel ${id} on PE või MV — palun täida "Märkus: PE/MV".`)
-      setTimeout(() => document.getElementById('note-' + id)?.focus(), 0)
-      return
-    }
+    if (bad) { const id = bad[0]; alert(`Küsimusel ${id} on PE või MV — palun täida "Märkus: PE/MV".`); setTimeout(() => document.getElementById('note-' + id)?.focus(), 0); return }
 
     const payload = {
       department_id: dept.id,
@@ -119,44 +100,31 @@ export default function App() {
     else alert(j.error || 'Salvestus ebaõnnestus')
   }
 
-  async function post(url: string, body: any, method = 'POST') {
-    const r = await fetch(API + url, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify(body)
-    })
+  async function post(url: string, body: any, method='POST') {
+    const r = await fetch(API + url, { method, headers: { 'Content-Type':'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) })
     const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
   }
   async function del(url: string) {
-    const r = await fetch(API + url, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } })
+    const r = await fetch(API + url, { method:'DELETE', headers: { Authorization: 'Bearer ' + token } })
     const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
   }
 
   function startEditQuestion(q: Question) {
-    setQEdit({
-      mode: 'edit',
-      id: q.id,
-      department_id: deptId,
-      text: q.text,
-      clause: q.clause || '',
-      stds: q.stds.join(' '),
-      guidance: q.guidance || ''
-    })
+    setQEdit({ mode:'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
   }
 
-  // Autokõrgus ekraanil (prindis kasutame <div> peeglit)
+  // ekraani autokõrgus (prindis kasutame peegel-div’i)
   function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
     const el = e.currentTarget
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 800) + 'px'
   }
 
-  function handlePrint() {
-    window.print()
-  }
+  function handlePrint() { window.print() }
 
   return (
     <div className="max-w-6xl mx-auto p-4">
-      {/* Print-CSS: peida/no-print, näita/only-print, lase pikad kastid murduda */}
+      {/* PRINT CSS */}
       <style>{`
         .only-print { display: none; }
         @media print {
@@ -164,7 +132,7 @@ export default function App() {
           .only-print { display: block !important; }
           .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
           .print-box { white-space: pre-wrap; border: 1px solid #000; padding: 6px; min-height: 120px; }
-          textarea { display: none !important; } /* turvaliselt, kui mõni jäi ilma .no-print'ita */
+          textarea { display: none !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
@@ -209,12 +177,7 @@ export default function App() {
 
           <div className="md:col-span-2">
             <label className="block text-xs font-semibold">Osakond</label>
-            <select
-              className="w-full border rounded px-2 py-1"
-              value={deptId}
-              onChange={e => { setDeptId(e.target.value); setQuestionsOpen(false) }}
-              disabled={!schema}
-            >
+            <select className="w-full border rounded px-2 py-1" value={deptId} onChange={e => { setDeptId(e.target.value); setQuestionsOpen(false) }} disabled={!schema}>
               <option value="">— Vali osakond —</option>
               {schema?.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
@@ -225,27 +188,18 @@ export default function App() {
             <input id="hdr-subdept" className="w-full border rounded px-2 py-1" placeholder="nt alamosakond" value={subDept} onChange={e => setSubDept(e.target.value)} />
           </div>
 
-          {/* Kohaldatavad standardid */}
           {dept && (
             <div className="md:col-span-2">
               <div className="block text-xs font-semibold">Kohaldatavad standardid</div>
               <div className="mt-1 flex gap-2 flex-wrap">
-                {deptStandards.length === 0
-                  ? <span className="text-xs text-gray-500">–</span>
-                  : deptStandards.map(s => <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>)
-                }
+                {deptStandards.length === 0 ? <span className="text-xs text-gray-500">–</span> : deptStandards.map(s => <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>)}
               </div>
             </div>
           )}
         </div>
 
         <div className="mt-3 flex justify-end no-print">
-          <button
-            className="px-3 py-1 border rounded"
-            disabled={!deptId}
-            onClick={() => setQuestionsOpen(v => !v)}
-            title={!deptId ? 'Vali enne osakond' : ''}
-          >
+          <button className="px-3 py-1 border rounded" disabled={!deptId} onClick={() => setQuestionsOpen(v => !v)} title={!deptId ? 'Vali enne osakond' : ''}>
             {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
           </button>
         </div>
@@ -253,16 +207,13 @@ export default function App() {
 
       {!schema ? <div>Laen skeemi...</div> : (
         <div className="grid md:grid-cols-4 gap-4">
+          {/* Vasak külgriba */}
           <div className="space-y-3 no-print">
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Standard</label>
               <div className="flex gap-2 flex-wrap mt-1">
-                {(['9001', '14001', '45001'] as Std[]).map(s => (
-                  <button
-                    key={s}
-                    className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')}
-                    onClick={() => setStds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                  >
+                {(['9001','14001','45001'] as Std[]).map(s => (
+                  <button key={s} className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')} onClick={() => setStds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev,s])}>
                     ISO {s}
                   </button>
                 ))}
@@ -279,30 +230,30 @@ export default function App() {
                 <div className="font-semibold">Redigeerimine</div>
                 <div>
                   <div className="text-xs">Osakond</div>
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e=>setDepEdit({...depEdit, id:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e=>setDepEdit({...depEdit, name:e.target.value})} />
                   <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments/'+depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                    <button className="px-2 py-1 border rounded" onClick={()=>del('/api/departments/'+depEdit.id)}>Kustuta</button>
                   </div>
                 </div>
 
                 <div>
                   <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e=>setQEdit({...qEdit, department_id:e.target.value})} />
+                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e=>setQEdit({...qEdit, stds:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e=>setQEdit({...qEdit, guidance:e.target.value})} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
                     ) : (
                       <>
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
                       </>
                     )}
                   </div>
@@ -311,6 +262,7 @@ export default function App() {
             )}
           </div>
 
+          {/* Põhisisu */}
           <div className="md:col-span-3 space-y-3">
             {!deptId ? (
               <div>Vali osakond päisest, seejärel vajuta “Ava küsimustik”.</div>
@@ -327,24 +279,17 @@ export default function App() {
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
-
-                      {/* standardimärgid küsimuse juures */}
-                      {q.stds?.length > 0 && q.stds.map(s => (
-                        <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
-                      ))}
-
+                      {q.stds?.length > 0 && q.stds.map(s => <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>)}
                       {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
-
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
-
                       {role === 'admin' && (
                         <span className="ml-2 space-x-2 no-print">
-                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
-                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={()=> startEditQuestion(q)}>Muuda</button>
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={()=> del('/api/questions/'+q.id)}>Kustuta</button>
                         </span>
                       )}
                     </div>
@@ -352,88 +297,51 @@ export default function App() {
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
+                    {/* Staatus */}
                     <div className="mt-2 flex gap-3 flex-wrap items-center">
                       <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.vs}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, vs: !cur.vs }
-                              if (next.vs) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
+                        <input type="checkbox" checked={!!a.vs} onChange={() => setAnswers(p => { const cur = p[q.id]||{}; const next = { ...cur, vs: !cur.vs }; if (next.vs) next.mv=false; return { ...p, [q.id]: next } })} />
                         Vastab standardile
                       </label>
-
                       <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.pe}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, pe: !cur.pe }
-                              if (next.pe) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
+                        <input type="checkbox" checked={!!a.pe} onChange={() => setAnswers(p => { const cur = p[q.id]||{}; const next = { ...cur, pe: !cur.pe }; if (next.pe) next.mv=false; return { ...p, [q.id]: next } })} />
                         Parendusettepanek
                       </label>
-
                       <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.mv}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, mv: !cur.mv }
-                              if (next.mv) { next.vs = false; next.pe = false }
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
+                        <input type="checkbox" checked={!!a.mv} onChange={() => setAnswers(p => { const cur = p[q.id]||{}; const next = { ...cur, mv: !cur.mv }; if (next.mv) { next.vs=false; next.pe=false } return { ...p, [q.id]: next } })} />
                         Mittevastavus
                       </label>
                     </div>
 
-                    {/* Tõendid & Märkus — ekraanil textarea, prindis peegeldiv */}
+                    {/* Tõendid & Märkus: print-labelid lisatud */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
-                      {/* Tõendid */}
+                      {/* Tõendid – ekraanil */}
                       <textarea
                         className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y no-print"
                         placeholder="Tõendid"
                         value={a.evidence || ''}
                         onInput={autoResize}
-                        onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
+                        onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], evidence:e.target.value}}))}
                       />
-                      <div className="only-print print-box md:col-span-1">
-                        {(a.evidence || '').trim() || '\u00A0'}
+                      {/* Tõendid – prindis pealkirjaga */}
+                      <div className="only-print md:col-span-1">
+                        <div className="text-xs font-semibold mb-1">Tõendid</div>
+                        <div className="print-box">{(a.evidence || '').trim() || '\u00A0'}</div>
                       </div>
 
-                      {/* Märkus */}
+                      {/* Märkus – ekraanil */}
                       <textarea
                         id={'note-' + q.id}
-                        className={
-                          'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y no-print ' +
-                          (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
-                        }
-                        placeholder={
-                          ((a.mv || a.pe) && !(a.note && a.note.trim()))
-                            ? 'Märkus: PE/MV (kohustuslik)'
-                            : 'Märkus: PE/MV'
-                        }
+                        className={'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y no-print ' + (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')}
+                        placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
                         value={a.note || ''}
                         onInput={autoResize}
-                        onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
+                        onChange={e=> setAnswers(p=>({...p, [q.id]: {...p[q.id], note:e.target.value}}))}
                       />
-                      <div className="only-print print-box md:col-span-2">
-                        {(a.note || '').trim() || '\u00A0'}
+                      {/* Märkus – prindis pealkirjaga */}
+                      <div className="only-print md:col-span-2">
+                        <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
+                        <div className="print-box">{(a.note || '').trim() || '\u00A0'}</div>
                       </div>
                     </div>
                   </div>
@@ -451,36 +359,28 @@ export default function App() {
   )
 }
 
-function Excl({ color, title }: { color: 'red' | 'blue'; title: string }) {
+function Excl({ color, title }: { color: 'red'|'blue'; title: string }) {
   const cn = color === 'red' ? 'text-red-600' : 'text-blue-600'
-  return (
-    <span title={title} className={cn} aria-label={title}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-      </svg>
-    </span>
-  )
+  return (<span title={title} className={cn} aria-label={title}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+  </span>)
 }
-
 function Check({ color, title }: { color: 'green'; title: string }) {
-  return (
-    <span title={title} className="text-green-600" aria-label={title}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z" />
-      </svg>
-    </span>
-  )
+  return (<span title={title} className="text-green-600" aria-label={title}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z"/></svg>
+  </span>)
 }
 
-function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: string; defaultPass: string; onLogin: (e: string, p: string) => void }) {
+function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: string; defaultPass: string; onLogin: (e:string,p:string)=>void }) {
   const [email, setEmail] = useState(defaultEmail)
   const [pass, setPass] = useState(defaultPass)
   const canSubmit = email.trim() && pass.trim()
   return (
     <div className="flex items-center gap-2">
-      <input className="border rounded px-2 py-1" placeholder="e-post" value={email} onChange={e => setEmail(e.target.value)} />
-      <input type="password" className="border rounded px-2 py-1" placeholder="parool" value={pass} onChange={e => setPass(e.target.value)} />
-      <button disabled={!canSubmit} className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => onLogin(email, pass)}>Logi sisse</button>
+      <input className="border rounded px-2 py-1" placeholder="e-post" value={email} onChange={e=>setEmail(e.target.value)} />
+      <input type="password" className="border rounded px-2 py-1" placeholder="parool" value={pass} onChange={e=>setPass(e.target.value)} />
+      <button disabled={!canSubmit} className="px-3 py-1 border rounded disabled:opacity-50" onClick={()=>onLogin(email, pass)}>Logi sisse</button>
     </div>
   )
 }
+
