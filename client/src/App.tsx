@@ -15,13 +15,15 @@ export default function App() {
 
   // protsess valitakse käsitsi
   const [deptId, setDeptId] = useState<string>('')
+
+  // küsimustiku avamine
   const [questionsOpen, setQuestionsOpen] = useState(false)
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
   const [query, setQuery] = useState('')
 
-  // Päise väljad
+  // Päis
   const [date, setDate] = useState<string>(() => {
     const d = new Date()
     const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -62,7 +64,6 @@ export default function App() {
 
   const dept = schema?.departments.find(d => d.id === deptId)
 
-  // Kohaldatavad standardid (kogutud osakonna küsimustest)
   const deptStandards = useMemo<Std[]>(() => {
     if (!dept) return []
     const set = new Set<Std>()
@@ -117,10 +118,7 @@ export default function App() {
   }
 
   async function post(url: string, body: any, method = 'POST') {
-    const r = await fetch(API + url, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify(body)
-    })
+    const r = await fetch(API + url, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) })
     const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
   }
   async function del(url: string) {
@@ -129,15 +127,7 @@ export default function App() {
   }
 
   function startEditQuestion(q: Question) {
-    setQEdit({
-      mode: 'edit',
-      id: q.id,
-      department_id: deptId,
-      text: q.text,
-      clause: q.clause || '',
-      stds: q.stds.join(' '),
-      guidance: q.guidance || ''
-    })
+    setQEdit({ mode: 'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
   }
 
   function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
@@ -146,12 +136,11 @@ export default function App() {
     el.style.height = Math.min(el.scrollHeight, 800) + 'px'
   }
 
-  function handlePrint() {
-    window.print()
-  }
+  function handlePrint() { window.print() }
 
   return (
     <div className="max-w-6xl mx-auto p-4">
+      {/* print-spetsiifiline CSS */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -159,6 +148,10 @@ export default function App() {
           textarea { border: 1px solid #000 !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+          /* >>> PDF: jätame veerud samaks; tõendid baasmin-kõrgus, märkus ~30% kõrgem */
+          .ev-field   { min-height: 8rem !important; }     /* ~Tõendite baas */
+          .note-field { min-height: 10.4rem !important; }  /* 8rem * 1.3 */
         }
       `}</style>
 
@@ -261,12 +254,7 @@ export default function App() {
 
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Otsi</label>
-              <input
-                className="w-full border rounded px-2 py-1"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="küsimus, klausel..."
-              />
+              <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="küsimus, klausel..." />
             </div>
 
             {role === 'admin' && (
@@ -326,94 +314,44 @@ export default function App() {
                         <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
                       ))}
                       {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
-
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
-
-                      {role === 'admin' && (
-                        <span className="ml-2 space-x-2 no-print">
-                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
-                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
-                        </span>
-                      )}
                     </div>
 
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    <div className="mt-2 flex gap-3 flex-wrap items-center">
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.vs}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, vs: !cur.vs }
-                              if (next.vs) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
-                          }
+                    {/* Väljad – ekraanil grid (1/3 vs 2/3); prindis jääb sama paigutus,
+                       kuid note-field on ~30% kõrgem. */}
+                    <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
+                      <div className="md:col-span-1">
+                        <div className="text-xs font-semibold mb-1">Tõendid</div>
+                        <textarea
+                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field"
+                          placeholder="Tõendid"
+                          value={a.evidence || ''}
+                          onInput={autoResize}
+                          onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                         />
-                        Vastab standardile
-                      </label>
+                      </div>
 
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.pe}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, pe: !cur.pe }
-                              if (next.pe) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
+                      <div className="md:col-span-2">
+                        <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
+                        <textarea
+                          id={'note-' + q.id}
+                          className={
+                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' +
+                            (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                           }
+                          placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
+                          value={a.note || ''}
+                          onInput={autoResize}
+                          onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
-                        Parendusettepanek
-                      </label>
-
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.mv}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, mv: !cur.mv }
-                              if (next.mv) { next.vs = false; next.pe = false }
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
-                        Mittevastavus
-                      </label>
-                    </div>
-
-                    <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch">
-                      <textarea
-                        className="border rounded px-2 py-1 md:col-span-1 min-h-32 resize-y"
-                        placeholder="Tõendid"
-                        value={a.evidence || ''}
-                        onInput={autoResize}
-                        onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
-                      />
-
-                      <textarea
-                        id={'note-' + q.id}
-                        className={
-                          'border rounded px-2 py-1 md:col-span-2 min-h-32 resize-y ' +
-                          (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
-                        }
-                        placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
-                        value={a.note || ''}
-                        onInput={autoResize}
-                        onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
-                      />
+                      </div>
                     </div>
                   </div>
                 )
@@ -435,7 +373,7 @@ function Excl({ color, title }: { color: 'red' | 'blue'; title: string }) {
   return (
     <span title={title} className={cn} aria-label={title}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
       </svg>
     </span>
   )
@@ -445,7 +383,7 @@ function Check({ color, title }: { color: 'green'; title: string }) {
   return (
     <span title={title} className="text-green-600" aria-label={title}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z" />
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z"/>
       </svg>
     </span>
   )
@@ -462,3 +400,4 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
