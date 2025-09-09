@@ -6,25 +6,6 @@ type Department = { id: string; name: string; questions: Question[] }
 type Schema = { meta: { version: string; org: string }; departments: Department[] }
 type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; note?: string }
 
-/** Faili-salvestuseks */
-type AuditDraft = {
-  kind: 'glx.audit.draft';
-  version: 1;
-  savedAt: string;
-  header: {
-    date: string;
-    auditor: string;
-    auditee: string;
-    auditeeTitle: string;
-    subDept: string;
-    deptId: string;
-  };
-  stds: Std[];
-  answers: Record<string, Answer>;
-  // Kui kunagi lisame pildid küsimuse kaupa, saame siia ka salvestada.
-  imagesByQuestion?: Record<string, string[]>;
-}
-
 const API = (import.meta.env.VITE_API_URL ?? window.location.origin)
 
 export default function App() {
@@ -54,12 +35,6 @@ export default function App() {
   const [auditeeTitle, setAuditeeTitle] = useState('')
   const [subDept, setSubDept] = useState('')
 
-  // (tulevik: piltide salvestus – hoiame tüübi toeks)
-  const [imagesByQuestion, setImagesByQuestion] = useState<Record<string, string[]>>({})
-
-  // Faili avamise input (peidetud)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
   const [qEdit, setQEdit] = useState<{
     mode: 'add' | 'edit',
     id: string,
@@ -70,6 +45,12 @@ export default function App() {
     guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
   const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
+
+  // pooliku auditi failivalija
+  const openFileRef = useRef<HTMLInputElement>(null)
+
+  // schema import-failivalija (admin)
+  const importSchemaRef = useRef<HTMLInputElement>(null)
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
@@ -105,6 +86,7 @@ export default function App() {
     return qs
   }, [dept, stds, query])
 
+  // NB: jätan funktsiooni alles; nuppu ei kuva
   async function submitAudit() {
     if (!dept) return
 
@@ -161,63 +143,120 @@ export default function App() {
     el.style.height = Math.min(el.scrollHeight, 800) + 'px'
   }
 
+  // --- PDF ---
   function handlePrint() { window.print() }
 
-  // === DRAFT: SALVESTA FAILI ===
-  function downloadDraft() {
-    const draft: AuditDraft = {
-      kind: 'glx.audit.draft',
+  // --- Poolik audit (lokaalne fail) ---
+  function savePartialToFile() {
+    const payload = {
       version: 1,
-      savedAt: new Date().toISOString(),
-      header: { date, auditor, auditee, auditeeTitle, subDept, deptId },
-      stds,
-      answers,
-      imagesByQuestion
+      date, auditor, auditee, auditeeTitle, subDept,
+      deptId, stds, answers, questionsOpen,
     }
-    const blob = new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
-    const d = new Date()
-    const ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-    a.href = url
-    a.download = `audit-draft-${ymd}.audit.json`
+    a.href = URL.createObjectURL(blob)
+    a.download = `poolik-audit-${deptId || 'valimata'}-${date}.json`
     a.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
   }
-
-  // === DRAFT: AVA FAILIST ===
-  function triggerOpenDraft() {
-    fileInputRef.current?.click()
-  }
-  function onOpenDraftFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  function requestOpenPartial() { openFileRef.current?.click() }
+  function onOpenPartialFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const parsed = JSON.parse(String(reader.result)) as AuditDraft
-        if (parsed?.kind !== 'glx.audit.draft') throw new Error('Vale failitüüp')
-        // taastame seisu
-        setDate(parsed.header.date || '')
-        setAuditor(parsed.header.auditor || '')
-        setAuditee(parsed.header.auditee || '')
-        setAuditeeTitle(parsed.header.auditeeTitle || '')
-        setSubDept(parsed.header.subDept || '')
-        setDeptId(parsed.header.deptId || '')
-        setQuestionsOpen(!!parsed.header.deptId) // kui protsess oli valitud, teeme küsimustiku nähtavaks
-        setStds((parsed.stds || []) as Std[])
-        setAnswers(parsed.answers || {})
-        setImagesByQuestion(parsed.imagesByQuestion || {})
-        alert('Poolik audit on avatud.')
-      } catch (err: any) {
-        alert('Faili lugemine ebaõnnestus: ' + (err?.message || String(err)))
+        const j = JSON.parse(String(reader.result || '{}'))
+        setDate(j.date ?? date)
+        setAuditor(j.auditor ?? '')
+        setAuditee(j.auditee ?? '')
+        setAuditeeTitle(j.auditeeTitle ?? '')
+        setSubDept(j.subDept ?? '')
+        setDeptId(j.deptId ?? '')
+        setStds(j.stds ?? ['9001', '14001', '45001'])
+        setAnswers(j.answers ?? {})
+        setQuestionsOpen(!!j.questionsOpen)
+        alert('Poolik audit laaditud.')
+      } catch {
+        alert('Vigane fail.')
       } finally {
-        // puhasta input, et sama faili teistkordne valik käivituks
-        if (fileInputRef.current) fileInputRef.current.value = ''
+        if (openFileRef.current) openFileRef.current.value = ''
       }
     }
-    reader.readAsText(file)
+    reader.readAsText(f)
   }
+
+  // --- Admin: schema eksport/import ---
+  async function exportSchemaJson() {
+    try {
+      const r = await fetch(API + '/api/schema')
+      if (!r.ok) throw new Error('fetch failed')
+      const data = await r.json()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `schema-export-${new Date().toISOString().slice(0,10)}.json`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    } catch { alert('Eksport ebaõnnestus') }
+  }
+  function askImportSchema() { importSchemaRef.current?.click() }
+  async function importSchemaFromFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return
+    try {
+      const text = await f.text()
+      const j: Schema = JSON.parse(text)
+      if (!j?.departments) throw new Error('bad format')
+
+      // Upsert osakonnad ja küsimused (ei kustuta puuduvaid)
+      for (const d of j.departments) {
+        // upsert department
+        let rr = await fetch(API + '/api/departments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ id: d.id, name: d.name })
+        })
+        if (!rr.ok) {
+          // put (uuenda nime)
+          await fetch(API + '/api/departments/' + d.id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ name: d.name })
+          })
+        }
+
+        // upsert questions
+        for (const q of (d.questions || [])) {
+          const payload = { id: q.id, department_id: d.id, text: q.text, clause: q.clause || '', stds: q.stds || [], guidance: q.guidance || '' }
+          let rq = await fetch(API + '/api/questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify(payload)
+          })
+          if (!rq.ok) {
+            await fetch(API + '/api/questions/' + q.id, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+              body: JSON.stringify(payload)
+            })
+          }
+        }
+      }
+
+      await refreshSchema()
+      alert('Import õnnestus.')
+    } catch (e) {
+      console.error(e)
+      alert('Import ebaõnnestus')
+    } finally {
+      if (importSchemaRef.current) importSchemaRef.current.value = ''
+    }
+  }
+
+  // nupustiilid
+  const btnGray = 'px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100'
+  const btnGreen = 'px-3 py-1 border rounded bg-green-50 hover:bg-green-100'
 
   return (
     <div className="max-w-6xl mx-auto p-4">
@@ -230,9 +269,8 @@ export default function App() {
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-          /* >>> PDF: jätame veerud samaks; tõendid baasmin-kõrgus, märkus ~30% kõrgem */
-          .ev-field   { min-height: 8rem !important; }     /* ~Tõendite baas */
-          .note-field { min-height: 10.4rem !important; }  /* 8rem * 1.3 */
+          .ev-field   { min-height: 8rem !important; }
+          .note-field { min-height: 10.4rem !important; }
         }
       `}</style>
 
@@ -245,7 +283,7 @@ export default function App() {
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
-              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
+              <button className={btnGray} onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
             </div>
           )}
         </div>
@@ -303,9 +341,10 @@ export default function App() {
           )}
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2 justify-end no-print">
+        {/* NUPUREA – “Ava küsimustik” heleroheline, ülejäänud helehallid; PDF on viimasena */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 no-print">
           <button
-            className="px-3 py-1 border rounded"
+            className={btnGreen}
             disabled={!deptId}
             onClick={() => setQuestionsOpen(v => !v)}
             title={!deptId ? 'Vali enne protsess' : ''}
@@ -313,16 +352,12 @@ export default function App() {
             {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
           </button>
 
-          {/* UUS: Pooliku auditi alla laadimine ja avamine */}
-          <button className="px-3 py-1 border rounded" onClick={downloadDraft}>Laadi alla poolik audit</button>
-          <button className="px-3 py-1 border rounded" onClick={triggerOpenDraft}>Ava poolik audit</button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,.audit.json,application/json"
-            className="hidden"
-            onChange={onOpenDraftFile}
-          />
+          <button className={btnGray} onClick={savePartialToFile}>Laadi alla poolik audit</button>
+          <button className={btnGray} onClick={requestOpenPartial}>Ava poolik audit</button>
+          <input ref={openFileRef} type="file" accept="application/json" className="hidden" onChange={onOpenPartialFile} />
+
+          <span className="grow" />
+          <button className={btnGray} onClick={handlePrint}>Salvesta PDF</button>
         </div>
       </section>
 
@@ -335,7 +370,7 @@ export default function App() {
                 {(['9001', '14001', '45001'] as Std[]).map(s => (
                   <button
                     key={s}
-                    className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')}
+                    className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100')}
                     onClick={() => setStds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
                   >
                     ISO {s}
@@ -357,9 +392,9 @@ export default function App() {
                   <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
                   <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
                   <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+                    <button className={btnGray} onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                    <button className={btnGray} onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                    <button className={btnGray} onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
                   </div>
                 </div>
 
@@ -373,14 +408,25 @@ export default function App() {
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      <button className={btnGray} onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
                     ) : (
                       <>
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                        <button className={btnGray} onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className={btnGray} onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
                       </>
                     )}
                   </div>
+                </div>
+
+                {/* Varunda / taasta (JSON) */}
+                <div className="pt-2 border-t">
+                  <div className="text-xs font-semibold mb-1">Varunda / taasta (JSON)</div>
+                  <div className="flex gap-2">
+                    <button className={btnGray} onClick={exportSchemaJson}>Ekspordi JSON</button>
+                    <button className={btnGray} onClick={askImportSchema}>Impordi JSON</button>
+                    <input ref={importSchemaRef} type="file" accept="application/json" className="hidden" onChange={importSchemaFromFile} />
+                  </div>
+                  <div className="text-[10px] text-gray-600 mt-1">Impordiga tehakse upsert: olemasolevad kirjed uuendatakse, puuduvaid ei kustutata.</div>
                 </div>
               </div>
             )}
@@ -401,23 +447,87 @@ export default function App() {
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
-                      <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
+                      <span className="text-xs border px-2 py-0.5 rounded">Q-{q.id.replace(/^Q[-_]?/i,'')}</span>
                       {q.stds?.length > 0 && q.stds.map(s => (
-                        <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
+                        <span
+                          key={s}
+                          className={
+                            'text-xs border px-2 py-0.5 rounded ' +
+                            (s === '9001' ? 'bg-blue-50' : s === '14001' ? 'bg-green-50' : 'bg-red-50')
+                          }
+                        >
+                          ISO {s}
+                        </span>
                       ))}
-                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
+                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded bg-gray-50">Standardi nõue: {q.clause}</span>}
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
+                      {role === 'admin' && (
+                        <span className="ml-2 space-x-2 no-print">
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    {/* Väljad – ekraanil grid (1/3 vs 2/3); prindis jääb sama paigutus,
-                       kuid note-field on ~30% kõrgem. */}
+                    {/* VS/PE/MV märkeruudud – funktsionaalsus alles */}
+                    <div className="mt-2 flex gap-3 flex-wrap items-center">
+                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1 bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={!!a.vs}
+                          onChange={() =>
+                            setAnswers(p => {
+                              const cur = p[q.id] || {}
+                              const next = { ...cur, vs: !cur.vs }
+                              if (next.vs) next.mv = false
+                              return { ...p, [q.id]: next }
+                            })
+                          }
+                        />
+                        Vastab standardile
+                      </label>
+
+                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1 bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={!!a.pe}
+                          onChange={() =>
+                            setAnswers(p => {
+                              const cur = p[q.id] || {}
+                              const next = { ...cur, pe: !cur.pe }
+                              if (next.pe) next.mv = false
+                              return { ...p, [q.id]: next }
+                            })
+                          }
+                        />
+                        Parendusettepanek
+                      </label>
+
+                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1 bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={!!a.mv}
+                          onChange={() =>
+                            setAnswers(p => {
+                              const cur = p[q.id] || {}
+                              const next = { ...cur, mv: !cur.mv }
+                              if (next.mv) { next.vs = false; next.pe = false }
+                              return { ...p, [q.id]: next }
+                            })
+                          }
+                        />
+                        Mittevastavus
+                      </label>
+                    </div>
+
+                    {/* Väljad */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
@@ -449,10 +559,6 @@ export default function App() {
                 )
               })
             )}
-            <div className="flex justify-end gap-2 no-print">
-              <button className="px-4 py-2 rounded border" onClick={submitAudit}>Salvesta audit</button>
-              <button className="px-4 py-2 rounded border" onClick={handlePrint}>Salvesta PDF</button>
-            </div>
           </div>
         </div>
       )}
@@ -488,7 +594,8 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     <div className="flex items-center gap-2">
       <input className="border rounded px-2 py-1" placeholder="e-post" value={email} onChange={e=>setEmail(e.target.value)} />
       <input type="password" className="border rounded px-2 py-1" placeholder="parool" value={pass} onChange={e=>setPass(e.target.value)} />
-      <button className="px-3 py-1 border rounded" onClick={()=>onLogin(email, pass)}>Logi sisse</button>
+      <button className="px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100" onClick={()=>onLogin(email, pass)}>Logi sisse</button>
     </div>
   )
 }
+
