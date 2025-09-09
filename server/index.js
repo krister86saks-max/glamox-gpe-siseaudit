@@ -152,9 +152,13 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
 
 // --- Static client ---
 app.use(express.static(path.join(__dirname, 'public')))
-app.get(/^(?!\/api).*/, (req,res) => {
+
+// SPA fallback: lisa korrektne charset, et täpitähed ei läheks sassi
+app.get(/^(?!\/api).*/, (req, res) => {
+  res.set('Content-Type', 'text/html; charset=utf-8')
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 
 app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+
 
