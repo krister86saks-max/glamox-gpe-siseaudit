@@ -13,8 +13,11 @@ export default function App() {
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
   const [schema, setSchema] = useState<Schema | null>(null)
 
-  const [deptId, setDeptId] = useState<string>('')            // protsess valitakse käsitsi
-  const [questionsOpen, setQuestionsOpen] = useState(false)   // küsimustiku avamine
+  // protsess valitakse käsitsi
+  const [deptId, setDeptId] = useState<string>('')
+
+  // küsimustiku avamine
+  const [questionsOpen, setQuestionsOpen] = useState(false)
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
@@ -133,78 +136,34 @@ export default function App() {
     el.style.height = Math.min(el.scrollHeight, 800) + 'px'
   }
 
-  // ---------- PRINT: textarea -> varju-div ----------
-  useEffect(() => {
-    const before = () => {
-      const tas = Array.from(document.querySelectorAll('textarea.txt-print')) as HTMLTextAreaElement[]
-      for (const ta of tas) {
-        const div = document.createElement('div')
-        div.className = 'print-shadow ' + (ta.classList.contains('note-field') ? 'is-note' : 'is-evidence')
-        div.textContent = ta.value || ''
-        const h = Math.max(ta.scrollHeight, ta.getBoundingClientRect().height)
-        div.style.minHeight = Math.round(h) + 'px'
-        ta.classList.add('hidden-for-print')
-        ta.parentElement?.insertBefore(div, ta.nextSibling)
-      }
-    }
-    const after = () => {
-      document.querySelectorAll('.print-shadow').forEach(n => n.remove())
-      document.querySelectorAll('textarea.hidden-for-print').forEach(n => n.classList.remove('hidden-for-print'))
-    }
-    window.addEventListener('beforeprint', before)
-    window.addEventListener('afterprint', after)
-    return () => { window.removeEventListener('beforeprint', before); window.removeEventListener('afterprint', after) }
-  }, [answers])
-
   function handlePrint() { window.print() }
 
-  // --- Backup UI handlers ---
-  async function exportData() {
-    if (!token) return alert('Logi sisse.')
-    const r = await fetch(API + '/api/export', { headers: { Authorization: 'Bearer ' + token } })
-    if (!r.ok) { const j = await r.json().catch(()=>({})); return alert(j.error || 'Export ebaõnnestus') }
-    const blob = await r.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = 'siseaudit-backup.json'
-    document.body.appendChild(a); a.click(); a.remove()
-    URL.revokeObjectURL(url)
+  // ---- badge stiilid ----
+  const stdChipClass = (s: Std) => {
+    switch (s) {
+      case '9001':  return 'bg-blue-100 text-blue-800 border-blue-200'
+      case '14001': return 'bg-green-100 text-green-800 border-green-200'
+      case '45001': return 'bg-red-100 text-red-800 border-red-200'
+      default:      return 'bg-gray-100 text-gray-800 border-gray-200'
+    }
   }
-  async function importData(file: File | null) {
-    if (!file || !token) return
-    const text = await file.text()
-    let json: any
-    try { json = JSON.parse(text) } catch { return alert('Vale JSON') }
-    const r = await fetch(API + '/api/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify(json)
-    })
-    const j = await r.json().catch(()=>({}))
-    if (!r.ok) return alert(j.error || 'Import ebaõnnestus')
-    alert('Andmed imporditud.')
-    refreshSchema()
-  }
+  const chipBase   = 'text-xs px-2 py-0.5 rounded border'
+  const chipMuted  = `${chipBase} bg-gray-100 text-gray-800 border-gray-300`
 
   return (
     <div className="max-w-6xl mx-auto p-4">
+      {/* print-spetsiifiline CSS */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
+          .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
           textarea { border: 1px solid #000 !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .hidden-for-print { display: none !important; }
-          .print-shadow {
-            display: block;
-            border: 1px solid #000;
-            padding: .25rem .5rem;
-            white-space: pre-wrap;
-            width: 100%;
-            break-inside: auto; page-break-inside: auto;
-          }
-          .print-shadow.is-evidence { min-height: 8rem !important; }
-          .print-shadow.is-note     { min-height: 10.4rem !important; } /* ~30% kõrgem */
+
+          /* >>> PDF: jätame veerud samaks; tõendid baasmin-kõrgus, märkus ~30% kõrgem */
+          .ev-field   { min-height: 8rem !important; }     /* ~Tõendite baas */
+          .note-field { min-height: 10.4rem !important; }  /* 8rem * 1.3 */
         }
       `}</style>
 
@@ -269,7 +228,9 @@ export default function App() {
               <div className="mt-1 flex gap-2 flex-wrap">
                 {deptStandards.length === 0
                   ? <span className="text-xs text-gray-500">–</span>
-                  : deptStandards.map(s => <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>)}
+                  : deptStandards.map(s => (
+                      <span key={s} className={`${chipBase} ${stdChipClass(s)}`}>ISO {s}</span>
+                    ))}
               </div>
             </div>
           )}
@@ -311,56 +272,39 @@ export default function App() {
             </div>
 
             {role === 'admin' && (
-              <>
-                <div className="p-3 border rounded space-y-3">
-                  <div className="font-semibold">Redigeerimine</div>
-                  <div>
-                    <div className="text-xs">Protsess</div>
-                    <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
-                    <div className="mt-1 space-x-2">
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                      <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
-                    <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
-                    <div className="space-x-2">
-                      {qEdit.mode === 'add' ? (
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
-                      ) : (
-                        <>
-                          <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                          <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
-                        </>
-                      )}
-                    </div>
+              <div className="p-3 border rounded space-y-3">
+                <div className="font-semibold">Redigeerimine</div>
+                <div>
+                  <div className="text-xs">Protsess</div>
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
+                  <div className="mt-1 space-x-2">
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
                   </div>
                 </div>
 
-                {/* Varunda / taasta */}
-                <div className="p-3 border rounded space-y-2">
-                  <div className="font-semibold">Varunda / taasta</div>
-                  <div className="flex items-center gap-2">
-                    <button className="px-2 py-1 border rounded" onClick={exportData}>Ekspordi JSON</button>
-                    <label className="px-2 py-1 border rounded cursor-pointer">
-                      Impordi JSON
-                      <input type="file" accept="application/json" className="hidden" onChange={e => importData(e.target.files?.[0] || null)} />
-                    </label>
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Kasuta enne deployd <em>Ekspordi</em> ja pärast deployd <em>Impordi</em>, kui püsikettaid ei kasuta.
+                <div>
+                  <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
+                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
+                  <div className="space-x-2">
+                    {qEdit.mode === 'add' ? (
+                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                    ) : (
+                      <>
+                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                      </>
+                    )}
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
 
@@ -377,13 +321,19 @@ export default function App() {
               visible.map((q) => {
                 const a = answers[q.id] || {}
                 return (
-                  <div key={q.id} className="p-3 border rounded">
+                  <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
-                      <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
+                      {/* helehall id-kiip */}
+                      <span className={chipMuted}>{q.id}</span>
+
+                      {/* värvikoodiga standardi kiibid */}
                       {q.stds?.length > 0 && q.stds.map(s => (
-                        <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
+                        <span key={s} className={`${chipBase} ${stdChipClass(s)}`}>ISO {s}</span>
                       ))}
-                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
+
+                      {/* helehall klausel */}
+                      {q.clause && <span className={chipMuted}>Standardi nõue: {q.clause}</span>}
+
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
@@ -394,11 +344,12 @@ export default function App() {
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
+                    {/* väljad */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
                         <textarea
-                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field txt-print"
+                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field"
                           placeholder="Tõendid"
                           value={a.evidence || ''}
                           onInput={autoResize}
@@ -411,7 +362,7 @@ export default function App() {
                         <textarea
                           id={'note-' + q.id}
                           className={
-                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field txt-print ' +
+                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' +
                             (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                           }
                           placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
