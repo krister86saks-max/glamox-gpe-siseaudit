@@ -4,9 +4,14 @@ type Std = '9001' | '14001' | '45001'
 type Question = { id: string; text: string; clause?: string; stds: Std[]; guidance?: string }
 type Department = { id: string; name: string; questions: Question[] }
 type Schema = { meta: { version: string; org: string }; departments: Department[] }
-type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; note?: string }
+type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; note?: string; images?: string[] }
 
 const API = (import.meta.env.VITE_API_URL ?? window.location.origin)
+
+// pildi üleslaadimise piirangud (brauseris)
+const MAX_IMAGES_PER_Q = 5
+const MAX_EDGE_PX = 1280
+const JPEG_QUALITY = 0.8
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null)
@@ -45,7 +50,6 @@ export default function App() {
     guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
   const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
-  const [importMode, setImportMode] = useState<'replace'|'merge'>('replace')
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
@@ -103,11 +107,16 @@ export default function App() {
       return
     }
 
+    // NB: ei saada images välja serverisse
     const payload = {
       department_id: dept.id,
       standards: stds,
-      answers: Object.entries(answers).map(([id, a]) => ({ question_id: id, ...a })),
+      answers: Object.entries(answers).map(([id, a]) => {
+        const { vs, pe, mv, evidence, note } = a || {}
+        return { question_id: id, vs, pe, mv, evidence, note }
+      }),
     }
+
     const r = await fetch(API + '/api/audits', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
@@ -139,47 +148,64 @@ export default function App() {
 
   function handlePrint() { window.print() }
 
-  // ---- badge stiilid ----
-  const stdChipClass = (s: Std) => {
-    switch (s) {
-      case '9001':  return 'bg-blue-100 text-blue-800 border-blue-200'
-      case '14001': return 'bg-green-100 text-green-800 border-green-200'
-      case '45001': return 'bg-red-100 text-red-800 border-red-200'
-      default:      return 'bg-gray-100 text-gray-800 border-gray-200'
-    }
-  }
-  const chipBase   = 'text-xs px-2 py-0.5 rounded border'
-  const chipMuted  = `${chipBase} bg-gray-100 text-gray-800 border-gray-300`
+  // -------- Piltide lisamine (ainult brauseri mälus) --------
 
-  // --- eksport/import kliendis ---
-  async function exportJSON() {
-    if (!token) return alert('Logi sisse')
-    const r = await fetch(API + '/api/export', { headers: { Authorization: 'Bearer ' + token } })
-    if (!r.ok) return alert('Export ebaõnnestus')
-    const data = await r.json()
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'gpe-schema.json'
-    a.click()
-    URL.revokeObjectURL(url)
+  function removeImage(qid: string, idx: number) {
+    setAnswers(p => {
+      const cur = p[qid] || {}
+      const imgs = (cur.images || []).slice()
+      imgs.splice(idx, 1)
+      return { ...p, [qid]: { ...cur, images: imgs } }
+    })
   }
-  function importJSON(files: FileList | null) {
-    if (!token) { alert('Logi sisse'); return }
-    if (!files || !files.length) return
-    const f = files[0]
-    f.text().then(txt => {
-      let parsed
-      try { parsed = JSON.parse(txt) } catch { alert('Vigane JSON'); return }
-      fetch(API + '/api/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({ mode: importMode, ...parsed })
-      })
-        .then(r => r.json())
-        .then(j => { if (j.ok) { alert('Import OK'); refreshSchema() } else alert(j.error || 'Import ebaõnnestus') })
-        .catch(() => alert('Import ebaõnnestus'))
+
+  async function handleAddImages(qid: string, files: FileList | null) {
+    if (!files || files.length === 0) return
+    const toProcess = Array.from(files).slice(0, MAX_IMAGES_PER_Q)
+
+    const processed: string[] = []
+    for (const f of toProcess) {
+      if (!/^image\//.test(f.type)) continue
+      try {
+        const dataUrl = await downscaleToDataURL(f, MAX_EDGE_PX, JPEG_QUALITY)
+        processed.push(dataUrl)
+      } catch (e) {
+        console.warn('pildi töötlus ebaõnnestus:', e)
+      }
+    }
+
+    setAnswers(p => {
+      const cur = p[qid] || {}
+      const existing = cur.images || []
+      const next = existing.concat(processed).slice(0, MAX_IMAGES_PER_Q)
+      return { ...p, [qid]: { ...cur, images: next } }
+    })
+  }
+
+  function downscaleToDataURL(file: File, maxEdge: number, quality: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const img = new Image()
+        img.onload = () => {
+          const scale = Math.min(1, maxEdge / Math.max(img.width, img.height))
+          const w = Math.max(1, Math.round(img.width * scale))
+          const h = Math.max(1, Math.round(img.height * scale))
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return reject(new Error('canvas ctx puudub'))
+          ctx.drawImage(img, 0, 0, w, h)
+          const mime = 'image/jpeg'
+          const dataUrl = canvas.toDataURL(mime, quality)
+          resolve(dataUrl)
+        }
+        img.onerror = reject
+        img.src = String(reader.result)
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
     })
   }
 
@@ -193,9 +219,22 @@ export default function App() {
           textarea { border: 1px solid #000 !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+          /* väljade min-kõrgused PDF-is */
           .ev-field   { min-height: 8rem !important; }
           .note-field { min-height: 10.4rem !important; }
+
+          /* PILDID: ära murra ühe pildi sees — kui ei mahu, mine järgmisele lehele */
+          .qa-images       { break-inside: avoid; page-break-inside: avoid; }
+          .qa-image        { break-inside: avoid; page-break-inside: avoid; }
+          .qa-image img    { break-inside: avoid; page-break-inside: avoid; display:block; max-width:100%; height:auto; }
+          .qa-images .img-actions { display: none !important; } /* peida kustutusnupud printimisel */
         }
+
+        /* ekraanil pisike grid piltide eelvaadete jaoks */
+        .qa-images-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .5rem; }
+        .qa-images figure { border: 1px solid #e5e7eb; border-radius: .25rem; padding: .25rem; }
+        .qa-images img { width: 100%; height: auto; }
       `}</style>
 
       <header className="flex items-center gap-3">
@@ -259,9 +298,7 @@ export default function App() {
               <div className="mt-1 flex gap-2 flex-wrap">
                 {deptStandards.length === 0
                   ? <span className="text-xs text-gray-500">–</span>
-                  : deptStandards.map(s => (
-                      <span key={s} className={`${chipBase} ${stdChipClass(s)}`}>ISO {s}</span>
-                    ))}
+                  : deptStandards.map(s => <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>)}
               </div>
             </div>
           )}
@@ -303,60 +340,39 @@ export default function App() {
             </div>
 
             {role === 'admin' && (
-              <>
-                <div className="p-3 border rounded space-y-3">
-                  <div className="font-semibold">Redigeerimine</div>
-                  <div>
-                    <div className="text-xs">Protsess</div>
-                    <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
-                    <div className="mt-1 space-x-2">
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                      <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
-                    <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
-                    <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
-                    <div className="space-x-2">
-                      {qEdit.mode === 'add' ? (
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
-                      ) : (
-                        <>
-                          <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                          <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
-                        </>
-                      )}
-                    </div>
+              <div className="p-3 border rounded space-y-3">
+                <div className="font-semibold">Redigeerimine</div>
+                <div>
+                  <div className="text-xs">Protsess</div>
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
+                  <div className="mt-1 space-x-2">
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
                   </div>
                 </div>
 
-                {/* VARUNDUS / JSON */}
-                <div className="p-3 border rounded space-y-2">
-                  <div className="font-semibold">Varundus (JSON)</div>
-                  <div className="flex items-center gap-2">
-                    <button className="px-2 py-1 border rounded" onClick={exportJSON}>Ekspordi JSON</button>
-                    <select className="border rounded px-2 py-1" value={importMode} onChange={e=>setImportMode(e.target.value as 'replace'|'merge')}>
-                      <option value="replace">Import: asenda</option>
-                      <option value="merge">Import: ühenda</option>
-                    </select>
-                    <label className="px-2 py-1 border rounded cursor-pointer">
-                      Impordi JSON
-                      <input type="file" accept="application/json,.json" className="hidden" onChange={e=>importJSON(e.target.files)} />
-                    </label>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Ekspordi/impordi <b>departments</b> ja <b>questions</b>. Import lubatud vaid adminile.
+                <div>
+                  <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
+                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
+                  <div className="space-x-2">
+                    {qEdit.mode === 'add' ? (
+                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                    ) : (
+                      <>
+                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                      </>
+                    )}
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
 
@@ -375,21 +391,42 @@ export default function App() {
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
-                      <span className={chipMuted}>{q.id}</span>
+                      <span className="text-xs border px-2 py-0.5 rounded bg-gray-100">Q-{q.id.replace(/^Q-?/,'')}</span>
+
                       {q.stds?.length > 0 && q.stds.map(s => (
-                        <span key={s} className={`${chipBase} ${stdChipClass(s)}`}>ISO {s}</span>
+                        <span
+                          key={s}
+                          className={
+                            'text-xs border px-2 py-0.5 rounded ' +
+                            (s === '9001' ? 'bg-blue-100 border-blue-300' :
+                             s === '14001' ? 'bg-green-100 border-green-300' :
+                             s === '45001' ? 'bg-red-100 border-red-300' : 'bg-gray-100')
+                          }
+                        >
+                          ISO {s}
+                        </span>
                       ))}
-                      {q.clause && <span className={chipMuted}>Standardi nõue: {q.clause}</span>}
+
+                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded bg-gray-100">Standardi nõue: {q.clause}</span>}
+
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
+
+                      {role === 'admin' && (
+                        <span className="ml-2 space-x-2 no-print">
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
+                    {/* väljad */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
@@ -416,6 +453,37 @@ export default function App() {
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
                       </div>
+                    </div>
+
+                    {/* Pildid (ainult mälus / prinditakse PDF-i) */}
+                    <div className="mt-3 qa-images">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="text-xs font-semibold">Pildid (ei salvestata serverisse)</div>
+                        <label className="no-print text-xs px-2 py-1 border rounded cursor-pointer">
+                          Lisa pilt
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => handleAddImages(q.id, e.currentTarget.files)}
+                          />
+                        </label>
+                      </div>
+
+                      {(a.images?.length ?? 0) > 0 && (
+                        <div className="qa-images-grid">
+                          {a.images!.map((src, idx) => (
+                            <figure key={idx} className="qa-image">
+                              <img src={src} alt={`pilt-${idx + 1}`} />
+                              <div className="img-actions mt-1 flex gap-2 justify-end no-print">
+                                <button className="text-xs px-2 py-0.5 border rounded"
+                                  onClick={() => removeImage(q.id, idx)}>Kustuta</button>
+                              </div>
+                            </figure>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
