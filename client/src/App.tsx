@@ -6,6 +6,25 @@ type Department = { id: string; name: string; questions: Question[] }
 type Schema = { meta: { version: string; org: string }; departments: Department[] }
 type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; note?: string }
 
+/** Faili-salvestuseks */
+type AuditDraft = {
+  kind: 'glx.audit.draft';
+  version: 1;
+  savedAt: string;
+  header: {
+    date: string;
+    auditor: string;
+    auditee: string;
+    auditeeTitle: string;
+    subDept: string;
+    deptId: string;
+  };
+  stds: Std[];
+  answers: Record<string, Answer>;
+  // Kui kunagi lisame pildid küsimuse kaupa, saame siia ka salvestada.
+  imagesByQuestion?: Record<string, string[]>;
+}
+
 const API = (import.meta.env.VITE_API_URL ?? window.location.origin)
 
 export default function App() {
@@ -13,18 +32,15 @@ export default function App() {
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
   const [schema, setSchema] = useState<Schema | null>(null)
 
-  const [deptId, setDeptId] = useState<string>('')          // protsess valitakse käsitsi
-  const [questionsOpen, setQuestionsOpen] = useState(false) // küsimustiku avamine
+  // protsess valitakse käsitsi
+  const [deptId, setDeptId] = useState<string>('')
+
+  // küsimustiku avamine
+  const [questionsOpen, setQuestionsOpen] = useState(false)
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
   const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
   const [query, setQuery] = useState('')
-
-  // Piltide lokaalne „sessiooni”-hoidla (ainult brauseris)
-  const [imagesByQ, setImagesByQ] = useState<Record<string, string[]>>(() => {
-    try { return JSON.parse(sessionStorage.getItem('qImages') || '{}') } catch { return {} }
-  })
-  useEffect(() => { sessionStorage.setItem('qImages', JSON.stringify(imagesByQ)) }, [imagesByQ])
 
   // Päis
   const [date, setDate] = useState<string>(() => {
@@ -38,6 +54,12 @@ export default function App() {
   const [auditeeTitle, setAuditeeTitle] = useState('')
   const [subDept, setSubDept] = useState('')
 
+  // (tulevik: piltide salvestus – hoiame tüübi toeks)
+  const [imagesByQuestion, setImagesByQuestion] = useState<Record<string, string[]>>({})
+
+  // Faili avamise input (peidetud)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const [qEdit, setQEdit] = useState<{
     mode: 'add' | 'edit',
     id: string,
@@ -48,8 +70,6 @@ export default function App() {
     guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
   const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
@@ -143,60 +163,60 @@ export default function App() {
 
   function handlePrint() { window.print() }
 
-  // --- piltide lisamine/ eemaldamine (ainult sessioonis) ---
-  function fileToDataUrl(f: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const fr = new FileReader()
-      fr.onload = () => resolve(fr.result as string)
-      fr.onerror = reject
-      fr.readAsDataURL(f)
-    })
-  }
-  async function addImages(qid: string, files: FileList) {
-    const imgs = Array.from(files).filter(f => f.type.startsWith('image/'))
-    const dataUrls = await Promise.all(imgs.map(fileToDataUrl))
-    setImagesByQ(p => ({ ...p, [qid]: [ ...(p[qid] || []), ...dataUrls ] }))
-  }
-  function removeImage(qid: string, idx: number) {
-    setImagesByQ(p => ({ ...p, [qid]: (p[qid] || []).filter((_, i) => i !== idx) }))
+  // === DRAFT: SALVESTA FAILI ===
+  function downloadDraft() {
+    const draft: AuditDraft = {
+      kind: 'glx.audit.draft',
+      version: 1,
+      savedAt: new Date().toISOString(),
+      header: { date, auditor, auditee, auditeeTitle, subDept, deptId },
+      stds,
+      answers,
+      imagesByQuestion
+    }
+    const blob = new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const d = new Date()
+    const ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    a.href = url
+    a.download = `audit-draft-${ymd}.audit.json`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
-  // --- JSON export/import ---
-  async function exportJSON() {
-    try {
-      const r = await fetch(API + '/api/schema/export', { headers: { Authorization: 'Bearer ' + token } })
-      if (!r.ok) throw new Error('export failed')
-      const j = await r.json()
-      const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `audit-schema-${new Date().toISOString().slice(0,10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      alert('Eksport ebaõnnestus')
-    }
+  // === DRAFT: AVA FAILIST ===
+  function triggerOpenDraft() {
+    fileInputRef.current?.click()
   }
-  async function importJSONFromFile(file: File) {
-    try {
-      const text = await file.text()
-      const payload = JSON.parse(text)
-      const r = await fetch(API + '/api/schema/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify(payload)
-      })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j.error || 'import failed')
-      await refreshSchema()
-      alert(`Import OK: protsesse ${j.departments}, küsimusi ${j.questions}`)
-    } catch (e) {
-      console.error(e)
-      alert('Import ebaõnnestus')
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = ''
+  function onOpenDraftFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result)) as AuditDraft
+        if (parsed?.kind !== 'glx.audit.draft') throw new Error('Vale failitüüp')
+        // taastame seisu
+        setDate(parsed.header.date || '')
+        setAuditor(parsed.header.auditor || '')
+        setAuditee(parsed.header.auditee || '')
+        setAuditeeTitle(parsed.header.auditeeTitle || '')
+        setSubDept(parsed.header.subDept || '')
+        setDeptId(parsed.header.deptId || '')
+        setQuestionsOpen(!!parsed.header.deptId) // kui protsess oli valitud, teeme küsimustiku nähtavaks
+        setStds((parsed.stds || []) as Std[])
+        setAnswers(parsed.answers || {})
+        setImagesByQuestion(parsed.imagesByQuestion || {})
+        alert('Poolik audit on avatud.')
+      } catch (err: any) {
+        alert('Faili lugemine ebaõnnestus: ' + (err?.message || String(err)))
+      } finally {
+        // puhasta input, et sama faili teistkordne valik käivituks
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
     }
+    reader.readAsText(file)
   }
 
   return (
@@ -209,10 +229,10 @@ export default function App() {
           textarea { border: 1px solid #000 !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .ev-field   { min-height: 8rem !important; }
-          .note-field { min-height: 10.4rem !important; }
-          .q-images, .q-images > div, .q-images img { break-inside: avoid; page-break-inside: avoid; }
-          .q-images img { max-width: 100% !important; height: auto !important; }
+
+          /* >>> PDF: jätame veerud samaks; tõendid baasmin-kõrgus, märkus ~30% kõrgem */
+          .ev-field   { min-height: 8rem !important; }     /* ~Tõendite baas */
+          .note-field { min-height: 10.4rem !important; }  /* 8rem * 1.3 */
         }
       `}</style>
 
@@ -277,18 +297,13 @@ export default function App() {
               <div className="mt-1 flex gap-2 flex-wrap">
                 {deptStandards.length === 0
                   ? <span className="text-xs text-gray-500">–</span>
-                  : deptStandards.map(s => {
-                      const col = s === '9001' ? 'bg-blue-100 border-blue-300' :
-                                  s === '14001' ? 'bg-green-100 border-green-300' :
-                                  'bg-red-100 border-red-300'
-                      return <span key={s} className={`text-xs border rounded px-2 py-0.5 ${col}`}>ISO {s}</span>
-                    })}
+                  : deptStandards.map(s => <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>)}
               </div>
             </div>
           )}
         </div>
 
-        <div className="mt-3 flex justify-end no-print">
+        <div className="mt-3 flex flex-wrap gap-2 justify-end no-print">
           <button
             className="px-3 py-1 border rounded"
             disabled={!deptId}
@@ -297,6 +312,17 @@ export default function App() {
           >
             {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
           </button>
+
+          {/* UUS: Pooliku auditi alla laadimine ja avamine */}
+          <button className="px-3 py-1 border rounded" onClick={downloadDraft}>Laadi alla poolik audit</button>
+          <button className="px-3 py-1 border rounded" onClick={triggerOpenDraft}>Ava poolik audit</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.audit.json,application/json"
+            className="hidden"
+            onChange={onOpenDraftFile}
+          />
         </div>
       </section>
 
@@ -306,23 +332,15 @@ export default function App() {
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Standard</label>
               <div className="flex gap-2 flex-wrap mt-1">
-                {(['9001', '14001', '45001'] as Std[]).map(s => {
-                  const col = s === '9001' ? 'bg-blue-600 text-white border-blue-700'
-                            : s === '14001' ? 'bg-green-600 text-white border-green-700'
-                            : 'bg-red-600 text-white border-red-700'
-                  const off = s === '9001' ? 'text-blue-700 border-blue-600'
-                            : s === '14001' ? 'text-green-700 border-green-600'
-                            : 'text-red-700 border-red-600'
-                  return (
-                    <button
-                      key={s}
-                      className={`px-3 py-1 text-sm rounded border ${stds.includes(s) ? col : off}`}
-                      onClick={() => setStds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                    >
-                      ISO {s}
-                    </button>
-                  )
-                })}
+                {(['9001', '14001', '45001'] as Std[]).map(s => (
+                  <button
+                    key={s}
+                    className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')}
+                    onClick={() => setStds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
+                  >
+                    ISO {s}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -364,19 +382,6 @@ export default function App() {
                     )}
                   </div>
                 </div>
-
-                {/* JSON backup/restore */}
-                <div className="pt-2 border-t">
-                  <div className="text-xs font-semibold mb-1">Varunda / taasta (JSON)</div>
-                  <div className="flex items-center gap-2">
-                    <button className="px-2 py-1 border rounded" onClick={exportJSON}>Ekspordi JSON</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => fileInputRef.current?.click()}>Impordi JSON</button>
-                    <input ref={fileInputRef} type="file" className="hidden" accept="application/json,.json" onChange={e => {
-                      const f = e.target.files?.[0]; if (f) importJSONFromFile(f)
-                    }}/>
-                  </div>
-                  <div className="text-[11px] text-gray-600 mt-1">Impordiga kirjutatakse protsessid ja küsimused <b>täielikult üle</b>.</div>
-                </div>
               </div>
             )}
           </div>
@@ -393,18 +398,14 @@ export default function App() {
             ) : (
               visible.map((q) => {
                 const a = answers[q.id] || {}
-                const imgs = imagesByQ[q.id] || []
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
-                      <span className="text-xs border px-2 py-0.5 rounded bg-gray-100">Q-{q.id.replace(/^Q-?/,'')}</span>
-                      {q.stds?.length > 0 && q.stds.map(s => {
-                        const col = s === '9001' ? 'bg-blue-100 border-blue-300'
-                                  : s === '14001' ? 'bg-green-100 border-green-300'
-                                  : 'bg-red-100 border-red-300'
-                        return <span key={s} className={`text-xs border px-2 py-0.5 rounded ${col}`}>ISO {s}</span>
-                      })}
-                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded bg-gray-100">Standardi nõue: {q.clause}</span>}
+                      <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
+                      {q.stds?.length > 0 && q.stds.map(s => (
+                        <span key={s} className="text-xs border px-2 py-0.5 rounded">ISO {s}</span>
+                      ))}
+                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
@@ -415,58 +416,8 @@ export default function App() {
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    {/* VS/PE/MV (checkboxid) */}
-                    <div className="mt-2 flex gap-3 flex-wrap items-center">
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.vs}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, vs: !cur.vs }
-                              if (next.vs) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
-                        Vastab standardile
-                      </label>
-
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.pe}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, pe: !cur.pe }
-                              if (next.pe) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
-                        Parendusettepanek
-                      </label>
-
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
-                        <input
-                          type="checkbox"
-                          checked={!!a.mv}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, mv: !cur.mv }
-                              if (next.mv) { next.vs = false; next.pe = false }
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
-                        Mittevastavus
-                      </label>
-                    </div>
-
-                    {/* väljad */}
+                    {/* Väljad – ekraanil grid (1/3 vs 2/3); prindis jääb sama paigutus,
+                       kuid note-field on ~30% kõrgem. */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
@@ -478,6 +429,7 @@ export default function App() {
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                         />
                       </div>
+
                       <div className="md:col-span-2">
                         <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
                         <textarea
@@ -491,39 +443,6 @@ export default function App() {
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
-                      </div>
-                    </div>
-
-                    {/* Pildid (ainult sessioonis) */}
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs font-semibold">Pildid (ei salvestata serverisse)</div>
-                        <div className="no-print">
-                          <input
-                            id={`img-${q.id}`}
-                            type="file"
-                            className="hidden"
-                            accept="image/*"
-                            multiple
-                            onChange={e => { if (e.target.files) addImages(q.id, e.target.files); e.currentTarget.value = '' }}
-                          />
-                          <label htmlFor={`img-${q.id}`} className="px-2 py-1 border rounded cursor-pointer">Lisa pilt</label>
-                        </div>
-                      </div>
-                      <div className="q-images mt-2 grid grid-cols-2 gap-2">
-                        {imgs.length === 0 && <div className="text-xs text-gray-500">Pole pilte.</div>}
-                        {imgs.map((src, idx) => (
-                          <div key={idx} className="relative">
-                            <a href={src} target="_blank" rel="noreferrer">
-                              <img src={src} alt={`Küsimus ${q.id} pilt ${idx+1}`} className="w-full h-auto rounded border" />
-                            </a>
-                            <button
-                              className="no-print absolute top-1 right-1 bg-white/80 border rounded px-1 text-xs"
-                              onClick={() => removeImage(q.id, idx)}
-                              title="Eemalda"
-                            >x</button>
-                          </div>
-                        ))}
                       </div>
                     </div>
                   </div>
@@ -551,6 +470,7 @@ function Excl({ color, title }: { color: 'red' | 'blue'; title: string }) {
     </span>
   )
 }
+
 function Check({ color, title }: { color: 'green'; title: string }) {
   return (
     <span title={title} className="text-green-600" aria-label={title}>
