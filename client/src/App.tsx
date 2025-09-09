@@ -270,27 +270,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Nuppuderiba (ülal) */}
-      <div className="mt-3 flex gap-2 items-center no-print">
-        <button
-          className="px-3 py-1 border rounded bg-green-100 border-green-600"
-          disabled={!deptId}
-          onClick={() => setQuestionsOpen(v => !v)}
-          title={!deptId ? 'Vali enne protsess' : ''}
-        >
-          {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
-        </button>
-
-        <button className="px-3 py-1 border rounded" onClick={downloadPartial}>Laadi alla poolik audit</button>
-        <label className="px-3 py-1 border rounded cursor-pointer">
-          Ava poolik audit
-          <input type="file" className="hidden" accept="application/json" onChange={e => e.target.files && openPartial(e.target.files[0])} />
-        </label>
-
-        <div className="ml-auto" />
-        <button className="px-3 py-1 border rounded" onClick={handlePrint}>Salvesta PDF</button>
-      </div>
-
       <div className="mt-4" />
 
       {/* Päis */}
@@ -350,6 +329,33 @@ export default function App() {
           )}
         </div>
       </section>
+
+      {/* --- NUPUD: Pärast päist --- */}
+      <div className="mb-3 flex gap-2 items-center no-print">
+        <button
+          className="px-3 py-1 border rounded bg-green-100 border-green-600"
+          disabled={!deptId}
+          onClick={() => setQuestionsOpen(v => !v)}
+          title={!deptId ? 'Vali enne protsess' : ''}
+        >
+          {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
+        </button>
+
+        <button className="px-3 py-1 border rounded" onClick={downloadPartial}>Laadi alla poolik audit</button>
+
+        <label className="px-3 py-1 border rounded cursor-pointer">
+          Ava poolik audit
+          <input
+            type="file"
+            className="hidden"
+            accept="application/json"
+            onChange={e => e.target.files && openPartial(e.target.files[0])}
+          />
+        </label>
+
+        <div className="ml-auto" />
+        <button className="px-3 py-1 border rounded" onClick={handlePrint}>Salvesta PDF</button>
+      </div>
 
       {!schema ? <div>Laen skeemi...</div> : (
         <div className="grid md:grid-cols-4 gap-4">
