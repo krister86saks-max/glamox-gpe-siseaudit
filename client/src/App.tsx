@@ -129,30 +129,30 @@ export default function App() {
     a.click()
     URL.revokeObjectURL(a.href)
   }
+
+  // UPSERT: PUT, kui 404 siis POST
+  async function upsertDepartment(dep: {id:string; name:string}) {
+    let r = await api('/api/departments/' + dep.id, 'PUT', { name: dep.name })
+    if (r.status === 404) r = await api('/api/departments', 'POST', dep)
+    if (!r.ok && r.status !== 400) throw new Error(r.json?.error || 'department upsert failed')
+  }
+  async function upsertQuestion(q: Question, department_id: string) {
+    const payload = { id: q.id, department_id, text: q.text, clause: q.clause ?? '', stds: q.stds, guidance: q.guidance ?? '' }
+    let r = await api('/api/questions/' + q.id, 'PUT', payload)
+    if (r.status === 404) r = await api('/api/questions', 'POST', payload)
+    if (!r.ok && r.status !== 400) throw new Error(r.json?.error || 'question upsert failed')
+  }
+
   async function importSchemaJSON(file: File) {
     if (!token || role !== 'admin') { alert('Vajalik admini sisselogimine.'); return }
     try {
       const text = await file.text()
       const data: Schema = JSON.parse(text)
 
-      // upsert protsessid ja küsimused
       for (const d of data.departments) {
-        // upsert department
-        let r = await api('/api/departments', 'POST', { id: d.id, name: d.name })
-        if (!r.ok && r.status !== 400) throw new Error(r.json?.error || 'department add failed')
-        if (!r.ok && r.status === 400) { // exists -> update name
-          await api('/api/departments/' + d.id, 'PUT', { name: d.name })
-        }
+        await upsertDepartment({ id: d.id, name: d.name })
         for (const q of d.questions) {
-          const payload = {
-            id: q.id, department_id: d.id, text: q.text,
-            clause: q.clause ?? '', stds: q.stds, guidance: q.guidance ?? ''
-          }
-          let rq = await api('/api/questions', 'POST', payload)
-          if (!rq.ok && rq.status !== 400) throw new Error(rq.json?.error || 'question add failed')
-          if (!rq.ok && rq.status === 400) {
-            await api('/api/questions/' + q.id, 'PUT', payload)
-          }
+          await upsertQuestion(q as Question, d.id)
         }
       }
       await refreshSchema()
@@ -236,14 +236,20 @@ export default function App() {
     <div className="max-w-6xl mx-auto p-4">
       {/* print-spetsiifiline CSS */}
       <style>{`
+        /* ekraanil peida print-only plokid */
+        @media screen { .print-only { display:none } }
+        /* prindis peida textarea ja teised ekraaniplokid, näita print-only sisu */
         @media print {
           .no-print { display: none !important; }
+          .hide-in-print { display: none !important; }
+          .print-only { display: block !important; }
           .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
           .no-break { break-inside: avoid; page-break-inside: avoid; }
           textarea { border: 1px solid #000 !important; overflow: visible !important; }
           select, input { border: 1px solid #000 !important; }
           .ev-field   { min-height: 8rem !important; }
           .note-field { min-height: 10.4rem !important; }
+          .textarea-print { white-space: pre-wrap; border:1px solid #000; border-radius:.25rem; padding:.25rem .5rem; }
           .img-print { width: 100% !important; height: auto !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
@@ -512,21 +518,25 @@ export default function App() {
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
+                        {/* ekraanil textarea */}
                         <textarea
-                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field"
+                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field hide-in-print"
                           placeholder="Tõendid"
                           value={a.evidence || ''}
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                         />
+                        {/* prindis tekstiplokk – murdub lehtede vahel */}
+                        <div className="print-only textarea-print ev-field">{a.evidence || ''}</div>
                       </div>
 
                       <div className="md:col-span-2">
                         <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
+                        {/* ekraanil textarea */}
                         <textarea
                           id={'note-' + q.id}
                           className={
-                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' +
+                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field hide-in-print ' +
                             (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                           }
                           placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
@@ -534,6 +544,8 @@ export default function App() {
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
+                        {/* prindis tekstiplokk – murdub lehtede vahel */}
+                        <div className="print-only textarea-print note-field">{a.note || ''}</div>
                       </div>
                     </div>
 
@@ -586,8 +598,6 @@ export default function App() {
                 </div>
               </div>
             )}
-
-            {/* alumist “Salvesta audit” nuppu EI lisata */}
           </div>
         </div>
       )}
@@ -627,5 +637,6 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
 
