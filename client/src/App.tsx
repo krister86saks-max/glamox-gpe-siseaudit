@@ -136,25 +136,52 @@ export default function App() {
     el.style.height = Math.min(el.scrollHeight, 800) + 'px'
   }
 
+  // ---------- PRINT: vaheta textarea prindis <div>-iks, et sisu jaotuks üle lehe ----------
+  useEffect(() => {
+    const before = () => {
+      const tas = Array.from(document.querySelectorAll('textarea.txt-print')) as HTMLTextAreaElement[]
+      for (const ta of tas) {
+        const div = document.createElement('div')
+        div.className = 'print-shadow ' + (ta.classList.contains('note-field') ? 'is-note' : 'is-evidence')
+        div.textContent = ta.value || ''
+        // hoia ligikaudne kõrgus
+        const h = Math.max(ta.scrollHeight, ta.getBoundingClientRect().height)
+        div.style.minHeight = Math.round(h) + 'px'
+        ta.classList.add('hidden-for-print')
+        ta.parentElement?.insertBefore(div, ta.nextSibling)
+      }
+    }
+    const after = () => {
+      document.querySelectorAll('.print-shadow').forEach(n => n.remove())
+      document.querySelectorAll('textarea.hidden-for-print').forEach(n => n.classList.remove('hidden-for-print'))
+    }
+    window.addEventListener('beforeprint', before)
+    window.addEventListener('afterprint', after)
+    return () => { window.removeEventListener('beforeprint', before); window.removeEventListener('afterprint', after) }
+  }, [answers])
+
   function handlePrint() { window.print() }
 
   return (
     <div className="max-w-6xl mx-auto p-4">
-      {/* print-spetsiifiline CSS */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
           textarea { border: 1px solid #000 !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-          /* Tõendite baasmin-kõrgus; Märkus ~30% kõrgem */
-          .ev-field   { min-height: 8rem !important; }      /* Tõendid */
-          .note-field { min-height: 10.4rem !important; }   /* ~+30% */
-
-          /* Tõendite LAIUS prindis ~60% oma praegusest */
-          .print-evidence { width: 60% !important; }
+          .hidden-for-print { display: none !important; }
+          .print-shadow {
+            display: block;
+            border: 1px solid #000;
+            padding: .25rem .5rem;
+            white-space: pre-wrap;
+            width: 100%;
+            break-inside: auto; page-break-inside: auto;
+          }
+          /* Kõrgused: Tõendid baas, Märkus ~30% kõrgem */
+          .print-shadow.is-evidence { min-height: 8rem !important; }
+          .print-shadow.is-note     { min-height: 10.4rem !important; } /* 8rem * 1.3 */
         }
       `}</style>
 
@@ -310,7 +337,7 @@ export default function App() {
               visible.map((q) => {
                 const a = answers[q.id] || {}
                 return (
-                  <div key={q.id} className="p-3 border rounded print-avoid-break">
+                  <div key={q.id} className="p-3 border rounded">
                     <div className="flex items-start gap-2 flex-wrap">
                       <span className="text-xs border px-2 py-0.5 rounded">{q.id}</span>
                       {q.stds?.length > 0 && q.stds.map(s => (
@@ -327,14 +354,11 @@ export default function App() {
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    {/* Ekraanil grid 1/3 + 2/3; prindis:
-                        - Tõendite laius ~60% oma praegusest (print-evidence)
-                        - Märkus ~30% kõrgem (note-field) */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
                         <textarea
-                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field print-evidence"
+                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field txt-print"
                           placeholder="Tõendid"
                           value={a.evidence || ''}
                           onInput={autoResize}
@@ -347,7 +371,7 @@ export default function App() {
                         <textarea
                           id={'note-' + q.id}
                           className={
-                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' +
+                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field txt-print ' +
                             (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                           }
                           placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
@@ -404,4 +428,5 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
