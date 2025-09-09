@@ -1,56 +1,38 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 
 type Std = '9001' | '14001' | '45001'
 type Question = { id: string; text: string; clause?: string; stds: Std[]; guidance?: string }
 type Department = { id: string; name: string; questions: Question[] }
 type Schema = { meta: { version: string; org: string }; departments: Department[] }
 type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; note?: string }
+type ImgItem = { id: string; name: string; dataUrl: string }
 
 const API = (import.meta.env.VITE_API_URL ?? window.location.origin)
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null)
-  const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
+  const [role, setRole]   = useState<'admin'|'auditor'|'external'|null>(null)
   const [schema, setSchema] = useState<Schema | null>(null)
 
-  // protsess valitakse käsitsi
-  const [deptId, setDeptId] = useState<string>('')
-
-  // küsimustiku avamine
-  const [questionsOpen, setQuestionsOpen] = useState(false)
+  const [deptId, setDeptId] = useState<string>('')           // protsess
+  const [questionsOpen, setQuestionsOpen] = useState(false)  // küsimustik
 
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
-  const [stds, setStds] = useState<Std[]>(['9001', '14001', '45001'])
+  const [images,  setImages]  = useState<Record<string, ImgItem[]>>({}) // pildid küsimuse kaupa (sessioonis)
+  const [stds, setStds] = useState<Std[]>(['9001','14001','45001'])
   const [query, setQuery] = useState('')
 
-  // Päis
+  // Päise väljad
   const [date, setDate] = useState<string>(() => {
-    const d = new Date()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
+    const d = new Date(); const mm = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0')
     return `${d.getFullYear()}-${mm}-${dd}`
   })
-  const [auditor, setAuditor] = useState('')
-  const [auditee, setAuditee] = useState('')
-  const [auditeeTitle, setAuditeeTitle] = useState('')
-  const [subDept, setSubDept] = useState('')
+  const [auditor, setAuditor] = useState(''); const [auditee, setAuditee] = useState('')
+  const [auditeeTitle, setAuditeeTitle] = useState(''); const [subDept, setSubDept] = useState('')
 
-  const [qEdit, setQEdit] = useState<{
-    mode: 'add' | 'edit',
-    id: string,
-    department_id: string,
-    text: string,
-    clause: string,
-    stds: string,
-    guidance: string
-  }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
-  const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
-
-  // pooliku auditi failivalija
-  const openFileRef = useRef<HTMLInputElement>(null)
-
-  // schema import-failivalija (admin)
-  const importSchemaRef = useRef<HTMLInputElement>(null)
+  // Admin edit
+  const [qEdit, setQEdit] = useState<{mode:'add'|'edit', id:string, department_id:string, text:string, clause:string, stds:string, guidance:string}>({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''})
+  const [depEdit, setDepEdit] = useState<{ id:string; name:string }>({ id:'', name:'' })
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
@@ -59,24 +41,21 @@ export default function App() {
   useEffect(() => { refreshSchema() }, [])
 
   async function login(email: string, password: string) {
-    const r = await fetch(API + '/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    })
+    const r = await fetch(API + '/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) })
     const j = await r.json()
     if (r.ok) { setToken(j.token); setRole(j.role) } else alert(j.error || 'login failed')
   }
 
   const dept = schema?.departments.find(d => d.id === deptId)
 
+  // Protsessi küsimuste standardid (päises kuvamiseks)
   const deptStandards = useMemo<Std[]>(() => {
     if (!dept) return []
-    const set = new Set<Std>()
-    for (const q of dept.questions) for (const s of q.stds) set.add(s)
+    const set = new Set<Std>(); for (const q of dept.questions) for (const s of q.stds) set.add(s as Std)
     return Array.from(set).sort() as Std[]
   }, [dept])
 
+  // Kuvarida
   const visible = useMemo(() => {
     if (!dept) return []
     const active = new Set(stds)
@@ -86,181 +65,125 @@ export default function App() {
     return qs
   }, [dept, stds, query])
 
-  // NB: jätan funktsiooni alles; nuppu ei kuva
-  async function submitAudit() {
-    if (!dept) return
-
-    const missing: Array<{ id: string; msg: string }> = []
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) missing.push({ id: 'hdr-date', msg: 'Palun vali kuupäev.' })
-    if (!auditor.trim()) missing.push({ id: 'hdr-auditor', msg: 'Palun täida auditeerija nimi.' })
-    if (!auditee.trim()) missing.push({ id: 'hdr-auditee', msg: 'Palun täida auditeeritav.' })
-    if (!auditeeTitle.trim()) missing.push({ id: 'hdr-title', msg: 'Palun täida auditeeritava amet.' })
-    if (missing.length) {
-      alert(missing[0].msg)
-      setTimeout(() => document.getElementById(missing[0].id)?.focus(), 0)
-      return
-    }
-
-    const bad = Object.entries(answers).find(([, a]) => a && (a.mv || a.pe) && !(a.note && a.note.trim()))
-    if (bad) {
-      const id = bad[0]
-      alert(`Küsimusel ${id} on PE või MV — palun täida "Märkus: PE/MV".`)
-      setTimeout(() => document.getElementById('note-' + id)?.focus(), 0)
-      return
-    }
-
-    const payload = {
-      department_id: dept.id,
-      standards: stds,
-      answers: Object.entries(answers).map(([id, a]) => ({ question_id: id, ...a })),
-    }
-    const r = await fetch(API + '/api/audits', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-      body: JSON.stringify(payload)
-    })
-    const j = await r.json()
-    if (r.ok) alert('Audit salvestatud. ID: ' + j.audit_id)
-    else alert(j.error || 'Salvestus ebaõnnestus')
-  }
-
-  async function post(url: string, body: any, method = 'POST') {
-    const r = await fetch(API + url, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) })
-    const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
+  // --- Admin API helperid ---
+  async function post(url: string, body: any, method='POST') {
+    const r = await fetch(API + url, { method, headers: { 'Content-Type':'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) })
+    const j = await r.json(); if (!r.ok) { alert(j.error || 'error') } else await refreshSchema()
   }
   async function del(url: string) {
-    const r = await fetch(API + url, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } })
-    const j = await r.json(); if (!r.ok) alert(j.error || 'error'); else await refreshSchema()
+    const r = await fetch(API + url, { method:'DELETE', headers: { Authorization: 'Bearer ' + token } })
+    const j = await r.json(); if (!r.ok) { alert(j.error || 'error') } else await refreshSchema()
   }
-
   function startEditQuestion(q: Question) {
-    setQEdit({ mode: 'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
+    setQEdit({ mode:'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
   }
 
-  function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
-    const el = e.currentTarget
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 800) + 'px'
+  // --- Pildid (sessioon) ---
+  function addImages(qid: string, files: FileList | null) {
+    if (!files || files.length === 0) return
+    const list = Array.from(files)
+    const readers = list.map(f => new Promise<ImgItem>((resolve, reject) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve({ id: qid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2), name: f.name, dataUrl: String(fr.result) })
+      fr.onerror = reject
+      fr.readAsDataURL(f)
+    }))
+    Promise.all(readers).then(items => setImages(p => ({ ...p, [qid]: [ ...(p[qid]||[]), ...items ] }))))
+  }
+  function removeImage(qid: string, imgId: string) {
+    setImages(p => ({ ...p, [qid]: (p[qid]||[]).filter(x => x.id !== imgId) }))
   }
 
-  // --- PDF ---
-  function handlePrint() { window.print() }
-
-  // --- Poolik audit (lokaalne fail) ---
-  function savePartialToFile() {
-    const payload = {
-      version: 1,
-      date, auditor, auditee, auditeeTitle, subDept,
-      deptId, stds, answers, questionsOpen,
-    }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `poolik-audit-${deptId || 'valimata'}-${date}.json`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  // --- Poolik audit failina (sh pildid) ---
+  function downloadPartial() {
+    const payload = { date, auditor, auditee, auditeeTitle, subDept, deptId, stds, answers, images }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'poolik-audit.json'; a.click(); URL.revokeObjectURL(a.href)
   }
-  function requestOpenPartial() { openFileRef.current?.click() }
-  function onOpenPartialFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    if (!f) return
-    const reader = new FileReader()
-    reader.onload = () => {
+  function uploadPartial(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return
+    const fr = new FileReader()
+    fr.onload = () => {
       try {
-        const j = JSON.parse(String(reader.result || '{}'))
-        setDate(j.date ?? date)
-        setAuditor(j.auditor ?? '')
-        setAuditee(j.auditee ?? '')
-        setAuditeeTitle(j.auditeeTitle ?? '')
-        setSubDept(j.subDept ?? '')
-        setDeptId(j.deptId ?? '')
-        setStds(j.stds ?? ['9001', '14001', '45001'])
-        setAnswers(j.answers ?? {})
-        setQuestionsOpen(!!j.questionsOpen)
-        alert('Poolik audit laaditud.')
-      } catch {
-        alert('Vigane fail.')
-      } finally {
-        if (openFileRef.current) openFileRef.current.value = ''
-      }
+        const j = JSON.parse(String(fr.result))
+        setDate(j.date||''); setAuditor(j.auditor||''); setAuditee(j.auditee||''); setAuditeeTitle(j.auditeeTitle||''); setSubDept(j.subDept||'')
+        setDeptId(j.deptId||''); setStds(j.stds||[]); setAnswers(j.answers||{}); setImages(j.images||{})
+        setQuestionsOpen(!!j.deptId)
+      } catch { alert('Vigane fail') }
     }
-    reader.readAsText(f)
+    fr.readAsText(f)
+    e.currentTarget.value = ''
   }
 
-  // --- Admin: schema eksport/import ---
-  async function exportSchemaJson() {
-    try {
-      const r = await fetch(API + '/api/schema')
-      if (!r.ok) throw new Error('fetch failed')
-      const data = await r.json()
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `schema-export-${new Date().toISOString().slice(0,10)}.json`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-    } catch { alert('Eksport ebaõnnestus') }
+  // --- JSON Import / Export (admin) ---
+  async function exportSchemaJSON() {
+    const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
+    const blob = new Blob([JSON.stringify(s, null, 2)], { type:'application/json' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schema-export.json'; a.click(); URL.revokeObjectURL(a.href)
   }
-  function askImportSchema() { importSchemaRef.current?.click() }
-  async function importSchemaFromFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function importSchemaJSON(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return
     try {
       const text = await f.text()
-      const j: Schema = JSON.parse(text)
-      if (!j?.departments) throw new Error('bad format')
-
-      // Upsert osakonnad ja küsimused (ei kustuta puuduvaid)
-      for (const d of j.departments) {
-        // upsert department
-        let rr = await fetch(API + '/api/departments', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      const data: Schema = JSON.parse(text)
+      // osakonnad
+      for (const d of data.departments) {
+        // proovi luua; kui eksisteerib, uuenda
+        let r = await fetch(API + '/api/departments', {
+          method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + token },
           body: JSON.stringify({ id: d.id, name: d.name })
         })
-        if (!rr.ok) {
-          // put (uuenda nime)
-          await fetch(API + '/api/departments/' + d.id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        if (!r.ok) {
+          await fetch(API + '/api/departments/'+d.id, {
+            method:'PUT', headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + token },
             body: JSON.stringify({ name: d.name })
           })
         }
-
-        // upsert questions
-        for (const q of (d.questions || [])) {
-          const payload = { id: q.id, department_id: d.id, text: q.text, clause: q.clause || '', stds: q.stds || [], guidance: q.guidance || '' }
-          let rq = await fetch(API + '/api/questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify(payload)
+      }
+      // küsimused
+      for (const d of data.departments) {
+        for (const q of d.questions) {
+          const body = { id: q.id, department_id: d.id, text: q.text, clause: q.clause||'', stds: q.stds, guidance: q.guidance||'' }
+          let r = await fetch(API + '/api/questions', {
+            method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + token }, body: JSON.stringify(body)
           })
-          if (!rq.ok) {
-            await fetch(API + '/api/questions/' + q.id, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-              body: JSON.stringify(payload)
+          if (!r.ok) {
+            await fetch(API + '/api/questions/'+q.id, {
+              method:'PUT', headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + token },
+              body: JSON.stringify({ department_id: d.id, text: q.text, clause: q.clause||'', stds: q.stds, guidance: q.guidance||'' })
             })
           }
         }
       }
-
       await refreshSchema()
-      alert('Import õnnestus.')
+      alert('Import õnnestus')
     } catch (e) {
       console.error(e)
       alert('Import ebaõnnestus')
     } finally {
-      if (importSchemaRef.current) importSchemaRef.current.value = ''
+      e.currentTarget.value = ''
     }
   }
 
-  // nupustiilid
-  const btnGray = 'px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100'
-  const btnGreen = 'px-3 py-1 border rounded bg-green-50 hover:bg-green-100'
+  function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
+    const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 800) + 'px'
+  }
+  function handlePrint() { window.print() }
+
+  // värvikoodiga sildid
+  const stdChip = (s: Std) => {
+    const base = 'text-xs px-2 py-0.5 rounded border'
+    const map: Record<Std,string> = {
+      '9001':  'bg-blue-50 border-blue-300',
+      '14001': 'bg-green-50 border-green-300',
+      '45001': 'bg-red-50 border-red-300'
+    }
+    return <span key={s} className={`${base} ${map[s]}`}>ISO {s}</span>
+  }
 
   return (
     <div className="max-w-6xl mx-auto p-4">
-      {/* print-spetsiifiline CSS */}
+      {/* PRINT CSS */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -268,9 +191,10 @@ export default function App() {
           textarea { border: 1px solid #000 !important; }
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
           .ev-field   { min-height: 8rem !important; }
-          .note-field { min-height: 10.4rem !important; }
+          .note-field { min-height: 10.4rem !important; } /* ~30% kõrgem */
+          .img-box { break-inside: avoid; page-break-inside: avoid; }
+          .img-box img { max-width: 100%; height: auto; }
         }
       `}</style>
 
@@ -283,42 +207,35 @@ export default function App() {
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
-              <button className={btnGray} onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
+              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
             </div>
           )}
         </div>
       </header>
 
-      <div className="mt-6" />
-
-      {/* Päis */}
+      {/* PÄIS */}
       <section className="mb-3 p-3 border rounded">
         <div className="grid md:grid-cols-2 gap-3">
           <div>
             <label htmlFor="hdr-date" className="block text-xs font-semibold">Kuupäev *</label>
-            <input id="hdr-date" type="date" className="w-full border rounded px-2 py-1" value={date} onChange={e => setDate(e.target.value)} />
+            <input id="hdr-date" type="date" className="w-full border rounded px-2 py-1" value={date} onChange={e=>setDate(e.target.value)} />
           </div>
           <div>
             <label htmlFor="hdr-auditor" className="block text-xs font-semibold">Auditeerija nimi *</label>
-            <input id="hdr-auditor" className="w-full border rounded px-2 py-1" placeholder="nimi" value={auditor} onChange={e => setAuditor(e.target.value)} />
+            <input id="hdr-auditor" className="w-full border rounded px-2 py-1" placeholder="nimi" value={auditor} onChange={e=>setAuditor(e.target.value)} />
           </div>
           <div>
             <label htmlFor="hdr-auditee" className="block text-xs font-semibold">Auditeeritav *</label>
-            <input id="hdr-auditee" className="w-full border rounded px-2 py-1" placeholder="nimi" value={auditee} onChange={e => setAuditee(e.target.value)} />
+            <input id="hdr-auditee" className="w-full border rounded px-2 py-1" placeholder="nimi" value={auditee} onChange={e=>setAuditee(e.target.value)} />
           </div>
           <div>
             <label htmlFor="hdr-title" className="block text-xs font-semibold">Amet *</label>
-            <input id="hdr-title" className="w-full border rounded px-2 py-1" placeholder="amet" value={auditeeTitle} onChange={e => setAuditeeTitle(e.target.value)} />
+            <input id="hdr-title" className="w-full border rounded px-2 py-1" placeholder="amet" value={auditeeTitle} onChange={e=>setAuditeeTitle(e.target.value)} />
           </div>
 
           <div className="md:col-span-2">
             <label className="block text-xs font-semibold">Auditeeritav protsess</label>
-            <select
-              className="w-full border rounded px-2 py-1"
-              value={deptId}
-              onChange={e => { setDeptId(e.target.value); setQuestionsOpen(false) }}
-              disabled={!schema}
-            >
+            <select className="w-full border rounded px-2 py-1" value={deptId} onChange={e=>{ setDeptId(e.target.value); setQuestionsOpen(false) }} disabled={!schema}>
               <option value="">— Vali protsess —</option>
               {schema?.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
@@ -326,53 +243,51 @@ export default function App() {
 
           <div className="md:col-span-2">
             <label htmlFor="hdr-subdept" className="block text-xs font-semibold">Alamosakond (kui kohandub)</label>
-            <input id="hdr-subdept" className="w-full border rounded px-2 py-1" placeholder="nt alamosakond" value={subDept} onChange={e => setSubDept(e.target.value)} />
+            <input id="hdr-subdept" className="w-full border rounded px-2 py-1" placeholder="nt alamosakond" value={subDept} onChange={e=>setSubDept(e.target.value)} />
           </div>
 
           {dept && (
             <div className="md:col-span-2">
               <div className="block text-xs font-semibold">Kohaldatavad standardid</div>
               <div className="mt-1 flex gap-2 flex-wrap">
-                {deptStandards.length === 0
-                  ? <span className="text-xs text-gray-500">–</span>
-                  : deptStandards.map(s => <span key={s} className="text-xs border rounded px-2 py-0.5">ISO {s}</span>)}
+                {deptStandards.length === 0 ? <span className="text-xs text-gray-500">–</span> : deptStandards.map(stdChip)}
               </div>
             </div>
           )}
         </div>
 
-        {/* NUPUREA – “Ava küsimustik” heleroheline, ülejäänud helehallid; PDF on viimasena */}
-        <div className="mt-3 flex flex-wrap items-center gap-2 no-print">
+        {/* NUPPUDERIDA */}
+        <div className="mt-3 flex flex-wrap gap-2 no-print">
           <button
-            className={btnGreen}
+            className="px-3 py-1 border rounded"
+            style={{ background:'#d9fbe0', borderColor:'#86efac' }}  // heleroheline
             disabled={!deptId}
-            onClick={() => setQuestionsOpen(v => !v)}
+            onClick={()=>setQuestionsOpen(v=>!v)}
             title={!deptId ? 'Vali enne protsess' : ''}
           >
             {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
           </button>
 
-          <button className={btnGray} onClick={savePartialToFile}>Laadi alla poolik audit</button>
-          <button className={btnGray} onClick={requestOpenPartial}>Ava poolik audit</button>
-          <input ref={openFileRef} type="file" accept="application/json" className="hidden" onChange={onOpenPartialFile} />
+          <button className="px-3 py-1 border rounded" onClick={downloadPartial}>Laadi alla poolik audit</button>
 
-          <span className="grow" />
-          <button className={btnGray} onClick={handlePrint}>Salvesta PDF</button>
+          <label className="px-3 py-1 border rounded cursor-pointer">
+            Ava poolik audit
+            <input type="file" accept="application/json" className="hidden" onChange={uploadPartial} />
+          </label>
+
+          <button className="px-3 py-1 border rounded ml-auto" onClick={handlePrint}>Salvesta PDF</button>
         </div>
       </section>
 
       {!schema ? <div>Laen skeemi...</div> : (
         <div className="grid md:grid-cols-4 gap-4">
+          {/* Vasak külg */}
           <div className="space-y-3 no-print">
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Standard</label>
               <div className="flex gap-2 flex-wrap mt-1">
-                {(['9001', '14001', '45001'] as Std[]).map(s => (
-                  <button
-                    key={s}
-                    className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100')}
-                    onClick={() => setStds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                  >
+                {(['9001','14001','45001'] as Std[]).map(s => (
+                  <button key={s} className={'px-3 py-1 text-sm rounded border ' + (stds.includes(s) ? 'bg-black text-white' : '')} onClick={() => setStds(prev => prev.includes(s)? prev.filter(x=>x!==s) : [...prev,s])}>
                     ISO {s}
                   </button>
                 ))}
@@ -381,57 +296,61 @@ export default function App() {
 
             <div className="p-3 border rounded">
               <label className="block text-xs font-semibold">Otsi</label>
-              <input className="w-full border rounded px-2 py-1" value={query} onChange={e => setQuery(e.target.value)} placeholder="küsimus, klausel..." />
+              <input className="w-full border rounded px-2 py-1" value={query} onChange={e=>setQuery(e.target.value)} placeholder="küsimus, klausel..." />
             </div>
 
             {role === 'admin' && (
               <div className="p-3 border rounded space-y-3">
                 <div className="font-semibold">Redigeerimine</div>
+
                 <div>
                   <div className="text-xs">Protsess</div>
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e=>setDepEdit({...depEdit, id:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e=>setDepEdit({...depEdit, name:e.target.value})} />
                   <div className="mt-1 space-x-2">
-                    <button className={btnGray} onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className={btnGray} onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className={btnGray} onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                    <button className="px-2 py-1 border rounded" onClick={()=>post('/api/departments/'+depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                    <button className="px-2 py-1 border rounded" onClick={()=>del('/api/departments/'+depEdit.id)}>Kustuta</button>
                   </div>
                 </div>
 
                 <div>
                   <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e => setQEdit({ ...qEdit, department_id: e.target.value })} />
-                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e => setQEdit({ ...qEdit, text: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e => setQEdit({ ...qEdit, clause: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e => setQEdit({ ...qEdit, stds: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e=>setQEdit({...qEdit, id:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="department_id" value={qEdit.department_id || deptId} onChange={e=>setQEdit({...qEdit, department_id:e.target.value})} />
+                  <textarea className="border rounded px-2 py-1 w-full mb-1" placeholder="küsimuse tekst" value={qEdit.text} onChange={e=>setQEdit({...qEdit, text:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standardi nõue (klausel)" value={qEdit.clause} onChange={e=>setQEdit({...qEdit, clause:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Standard (nt 9001 14001)" value={qEdit.stds} onChange={e=>setQEdit({...qEdit, stds:e.target.value})} />
+                  <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e=>setQEdit({...qEdit, guidance:e.target.value})} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className={btnGray} onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
                     ) : (
                       <>
-                        <button className={btnGray} onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className={btnGray} onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* Varunda / taasta (JSON) */}
-                <div className="pt-2 border-t">
+                {/* JSON imp/exp */}
+                <div>
                   <div className="text-xs font-semibold mb-1">Varunda / taasta (JSON)</div>
                   <div className="flex gap-2">
-                    <button className={btnGray} onClick={exportSchemaJson}>Ekspordi JSON</button>
-                    <button className={btnGray} onClick={askImportSchema}>Impordi JSON</button>
-                    <input ref={importSchemaRef} type="file" accept="application/json" className="hidden" onChange={importSchemaFromFile} />
+                    <button className="px-2 py-1 border rounded" onClick={exportSchemaJSON}>Ekspordi JSON</button>
+                    <label className="px-2 py-1 border rounded cursor-pointer">
+                      Impordi JSON
+                      <input type="file" accept="application/json" className="hidden" onChange={importSchemaJSON} />
+                    </label>
                   </div>
-                  <div className="text-[10px] text-gray-600 mt-1">Impordiga tehakse upsert: olemasolevad kirjed uuendatakse, puuduvaid ei kustutata.</div>
+                  <div className="text-[11px] mt-1 text-gray-600">Impordiga kirjutatakse protsessid ja küsimused üle / sünkroniseeritakse.</div>
                 </div>
               </div>
             )}
           </div>
 
+          {/* Põhikolumn */}
           <div className="md:col-span-3 space-y-3">
             {!deptId ? (
               <div>Vali protsess päisest, seejärel vajuta “Ava küsimustik”.</div>
@@ -442,92 +361,48 @@ export default function App() {
             ) : visible.length === 0 ? (
               <div>Selles protsessis ei leitud sobivaid küsimusi (kontrolli valitud standardeid või otsingut).</div>
             ) : (
-              visible.map((q) => {
+              visible.map(q => {
                 const a = answers[q.id] || {}
+                const imgs = images[q.id] || []
                 return (
                   <div key={q.id} className="p-3 border rounded print-avoid-break">
                     <div className="flex items-start gap-2 flex-wrap">
-                      <span className="text-xs border px-2 py-0.5 rounded">Q-{q.id.replace(/^Q[-_]?/i,'')}</span>
-                      {q.stds?.length > 0 && q.stds.map(s => (
-                        <span
-                          key={s}
-                          className={
-                            'text-xs border px-2 py-0.5 rounded ' +
-                            (s === '9001' ? 'bg-blue-50' : s === '14001' ? 'bg-green-50' : 'bg-red-50')
-                          }
-                        >
-                          ISO {s}
-                        </span>
-                      ))}
+                      <span className="text-xs border px-2 py-0.5 rounded bg-gray-50">Q-001</span>
+                      {q.stds?.length > 0 && q.stds.map(stdChip)}
                       {q.clause && <span className="text-xs border px-2 py-0.5 rounded bg-gray-50">Standardi nõue: {q.clause}</span>}
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
-                      {role === 'admin' && (
-                        <span className="ml-2 space-x-2 no-print">
-                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
-                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
-                        </span>
-                      )}
                     </div>
 
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    {/* VS/PE/MV märkeruudud – funktsionaalsus alles */}
+                    {/* Staatus */}
                     <div className="mt-2 flex gap-3 flex-wrap items-center">
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1 bg-gray-50">
-                        <input
-                          type="checkbox"
-                          checked={!!a.vs}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, vs: !cur.vs }
-                              if (next.vs) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
+                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                        <input type="checkbox" checked={!!a.vs} onChange={() =>
+                          setAnswers(p => { const cur = p[q.id]||{}; const next = { ...cur, vs: !cur.vs }; if (next.vs) next.mv=false; return { ...p, [q.id]: next } })
+                        }/>
                         Vastab standardile
                       </label>
-
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1 bg-gray-50">
-                        <input
-                          type="checkbox"
-                          checked={!!a.pe}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, pe: !cur.pe }
-                              if (next.pe) next.mv = false
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
+                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                        <input type="checkbox" checked={!!a.pe} onChange={() =>
+                          setAnswers(p => { const cur = p[q.id]||{}; const next = { ...cur, pe: !cur.pe }; if (next.pe) next.mv=false; return { ...p, [q.id]: next } })
+                        }/>
                         Parendusettepanek
                       </label>
-
-                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1 bg-gray-50">
-                        <input
-                          type="checkbox"
-                          checked={!!a.mv}
-                          onChange={() =>
-                            setAnswers(p => {
-                              const cur = p[q.id] || {}
-                              const next = { ...cur, mv: !cur.mv }
-                              if (next.mv) { next.vs = false; next.pe = false }
-                              return { ...p, [q.id]: next }
-                            })
-                          }
-                        />
+                      <label className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                        <input type="checkbox" checked={!!a.mv} onChange={() =>
+                          setAnswers(p => { const cur = p[q.id]||{}; const next = { ...cur, mv: !cur.mv, vs:false, pe:false }; return { ...p, [q.id]: next } })
+                        }/>
                         Mittevastavus
                       </label>
                     </div>
 
-                    {/* Väljad */}
+                    {/* Väljad + pildid */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
@@ -536,7 +411,7 @@ export default function App() {
                           placeholder="Tõendid"
                           value={a.evidence || ''}
                           onInput={autoResize}
-                          onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
+                          onChange={e=>setAnswers(p=>({ ...p, [q.id]: { ...p[q.id], evidence: e.target.value } }))}
                         />
                       </div>
 
@@ -544,16 +419,35 @@ export default function App() {
                         <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
                         <textarea
                           id={'note-' + q.id}
-                          className={
-                            'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' +
-                            (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
-                          }
-                          placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
+                          className={'border rounded px-2 py-1 w-full min-h-32 resize-y note-field ' + (((a.mv||a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')}
+                          placeholder={((a.mv||a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
                           value={a.note || ''}
                           onInput={autoResize}
-                          onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
+                          onChange={e=>setAnswers(p=>({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
                         />
                       </div>
+                    </div>
+
+                    {/* Pildid */}
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-semibold">Pildid</div>
+                        <label className="no-print px-2 py-1 border rounded cursor-pointer">
+                          Lisa pildid
+                          <input type="file" accept="image/*" multiple className="hidden" onChange={e=>addImages(q.id, e.target.files)} />
+                        </label>
+                      </div>
+                      {imgs.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {imgs.map(img => (
+                            <div key={img.id} className="img-box border rounded p-1" style={{width:'240px'}}>
+                              <img src={img.dataUrl} alt={img.name} />
+                              <div className="text-[11px] mt-1 truncate">{img.name}</div>
+                              <button className="no-print mt-1 text-xs px-2 py-0.5 border rounded" onClick={()=>removeImage(q.id, img.id)}>Eemalda</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -566,36 +460,30 @@ export default function App() {
   )
 }
 
-function Excl({ color, title }: { color: 'red' | 'blue'; title: string }) {
+function Excl({ color, title }: { color: 'red'|'blue'; title: string }) {
   const cn = color === 'red' ? 'text-red-600' : 'text-blue-600'
   return (
     <span title={title} className={cn} aria-label={title}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-      </svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
     </span>
   )
 }
-
 function Check({ color, title }: { color: 'green'; title: string }) {
   return (
     <span title={title} className="text-green-600" aria-label={title}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z"/>
-      </svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.2 13.3-3.1-3.1 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3z"/></svg>
     </span>
   )
 }
-
-function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: string; defaultPass: string; onLogin: (e: string, p: string) => void }) {
-  const [email, setEmail] = useState(defaultEmail)
-  const [pass, setPass] = useState(defaultPass)
+function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail:string; defaultPass:string; onLogin:(e:string,p:string)=>void }) {
+  const [email, setEmail] = useState(defaultEmail); const [pass, setPass] = useState(defaultPass)
   return (
     <div className="flex items-center gap-2">
       <input className="border rounded px-2 py-1" placeholder="e-post" value={email} onChange={e=>setEmail(e.target.value)} />
       <input type="password" className="border rounded px-2 py-1" placeholder="parool" value={pass} onChange={e=>setPass(e.target.value)} />
-      <button className="px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100" onClick={()=>onLogin(email, pass)}>Logi sisse</button>
+      <button className="px-3 py-1 border rounded" onClick={()=>onLogin(email, pass)}>Logi sisse</button>
     </div>
   )
 }
+
 
