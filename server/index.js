@@ -13,7 +13,9 @@ import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 
 const app = express()
-app.use(express.json())
+
+// suurem body limiit, et JSON import ei jookseks kinni
+app.use(express.json({ limit: '5mb' }))
 
 app.use(helmet())
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }))
@@ -38,7 +40,12 @@ if (ADMIN_EMAIL && ADMIN_PASSWORD) {
   const existing = db.data.users.find(u => u.email === ADMIN_EMAIL)
   const password_hash = bcrypt.hashSync(ADMIN_PASSWORD, 10)
   if (!existing) {
-    db.data.users.push({ id: crypto.randomUUID(), email: ADMIN_EMAIL, role: 'admin', password_hash })
+    db.data.users.push({
+      id: crypto.randomUUID(),
+      email: ADMIN_EMAIL,
+      role: 'admin',
+      password_hash,
+    })
     await save()
     console.log('Bootstrap: loodud admin kasutaja ->', ADMIN_EMAIL)
   } else if (!bcrypt.compareSync(ADMIN_PASSWORD, existing.password_hash)) {
@@ -86,6 +93,49 @@ app.get('/api/schema', (req,res) => {
     }))
   }
   res.json(schema)
+})
+
+// --- Schema EXPORT (backup) ---
+app.get('/api/schema/export', authRequired, requireRole('admin'), (req,res) => {
+  const payload = {
+    exported_at: new Date().toISOString(),
+    departments: db.data.departments,
+    questions: db.data.questions,
+  }
+  res.json(payload)
+})
+
+// --- Schema IMPORT (restore/replace) ---
+app.post('/api/schema/import', authRequired, requireRole('admin'), async (req,res) => {
+  try {
+    const { departments, questions } = req.body || {}
+    if (!Array.isArray(departments) || !Array.isArray(questions)) {
+      return res.status(400).json({ error: 'invalid payload' })
+    }
+
+    // Väike valideerimine
+    const depIds = new Set()
+    for (const d of departments) {
+      if (!d.id || !d.name) return res.status(400).json({ error: 'department missing id or name' })
+      if (depIds.has(d.id)) return res.status(400).json({ error: 'duplicate department id: ' + d.id })
+      depIds.add(d.id)
+    }
+    const qIds = new Set()
+    for (const q of questions) {
+      if (!q.id || !q.department_id || !q.text) return res.status(400).json({ error: 'question missing fields' })
+      if (!depIds.has(q.department_id)) return res.status(400).json({ error: 'question references unknown department: ' + q.department_id })
+      if (qIds.has(q.id)) return res.status(400).json({ error: 'duplicate question id: ' + q.id })
+      qIds.add(q.id)
+    }
+
+    db.data.departments = departments
+    db.data.questions = questions
+    await save()
+    res.json({ ok: true, departments: departments.length, questions: questions.length })
+  } catch (e) {
+    console.error('IMPORT error:', e)
+    res.status(500).json({ error: 'import failed' })
+  }
 })
 
 // --- Departments CRUD ---
@@ -144,34 +194,6 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
   res.json({ audit: a, answers: ans })
 })
 
-// --- Export / Import (JSON) ---
-app.get('/api/export', authRequired, requireRole('admin'), (req,res) => {
-  const { departments, questions } = db.data
-  res.json({ departments, questions })
-})
-
-app.post('/api/import', authRequired, requireRole('admin'), async (req,res) => {
-  const { departments, questions, mode = 'replace' } = req.body || {}
-  if (!Array.isArray(departments) || !Array.isArray(questions)) {
-    return res.status(400).json({ error: 'invalid payload' })
-  }
-  if (mode === 'replace') {
-    db.data.departments = departments
-    db.data.questions = questions
-  } else {
-    // merge by id
-    const depMap = new Map(db.data.departments.map(d => [d.id, d]))
-    for (const d of departments) depMap.set(d.id, d)
-    db.data.departments = Array.from(depMap.values())
-
-    const qMap = new Map(db.data.questions.map(q => [q.id, q]))
-    for (const q of questions) qMap.set(q.id, q)
-    db.data.questions = Array.from(qMap.values())
-  }
-  await save()
-  res.json({ ok: true })
-})
-
 // --- Static client ---
 app.use(express.static(path.join(__dirname, 'public')))
 app.get(/^(?!\/api).*/, (req,res) => {
@@ -179,4 +201,5 @@ app.get(/^(?!\/api).*/, (req,res) => {
 })
 
 app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+
 
