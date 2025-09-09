@@ -149,9 +149,12 @@ export default function App() {
           select, input { border: 1px solid #000 !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-          /* >>> PDF: jätame veerud samaks; tõendid baasmin-kõrgus, märkus ~30% kõrgem */
-          .ev-field   { min-height: 8rem !important; }     /* ~Tõendite baas */
-          .note-field { min-height: 10.4rem !important; }  /* 8rem * 1.3 */
+          /* Tõendite baasmin-kõrgus; Märkus ~30% kõrgem */
+          .ev-field   { min-height: 8rem !important; }      /* Tõendid */
+          .note-field { min-height: 10.4rem !important; }   /* ~+30% */
+
+          /* Tõendite LAIUS prindis ~60% oma praegusest */
+          .print-evidence { width: 60% !important; }
         }
       `}</style>
 
@@ -324,13 +327,14 @@ export default function App() {
                     <div className="mt-2">{q.text}</div>
                     {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
-                    {/* Väljad – ekraanil grid (1/3 vs 2/3); prindis jääb sama paigutus,
-                       kuid note-field on ~30% kõrgem. */}
+                    {/* Ekraanil grid 1/3 + 2/3; prindis:
+                        - Tõendite laius ~60% oma praegusest (print-evidence)
+                        - Märkus ~30% kõrgem (note-field) */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
                         <textarea
-                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field"
+                          className="border rounded px-2 py-1 w-full min-h-32 resize-y ev-field print-evidence"
                           placeholder="Tõendid"
                           value={a.evidence || ''}
                           onInput={autoResize}
