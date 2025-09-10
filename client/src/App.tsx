@@ -250,7 +250,7 @@ export default function App() {
 
           /* kõrgused */
           .ev-field   { min-height: 8rem !important; }
-          .note-field { min-height: 12rem !important; } /* +50% võrreldes tõenditega */
+          .note-field { min-height: 15rem !important; } /* 12rem -> +25% = 15rem */
 
           /* prindis asendame textarea plokitekstiga, mis murdub lehtede vahel */
           .textarea-print { white-space: pre-wrap; border:1px solid #000; border-radius:.25rem; padding:.25rem .5rem; }
@@ -258,8 +258,8 @@ export default function App() {
           /* pildid täislaiuses, ei poolitu */
           .img-print { width: 100% !important; height: auto !important; }
 
-          /* Tõendid ~20% (60% varasemast 1/3 laiusest), Märkus ~80% */
-          .qa-fields { display: grid !important; grid-template-columns: 0.2fr 0.8fr !important; column-gap: 0.5rem !important; }
+          /* QA-plokk prindis alati vertikaalselt (Märkus tõendite all) */
+          .qa-fields { display: block !important; }
 
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
@@ -530,9 +530,9 @@ export default function App() {
                       </label>
                     </div>
 
-                    {/* Tõendid / Märkus */}
-                    <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
-                      <div className="md:col-span-1">
+                    {/* Tõendid (üleval) + Märkus (otse all) — vertikaalne paigutus */}
+                    <div className="mt-2 space-y-2 qa-fields">
+                      <div>
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
                         {/* ekraanil textarea */}
                         <textarea
@@ -546,7 +546,7 @@ export default function App() {
                         <div className="print-only textarea-print ev-field">{a.evidence || ''}</div>
                       </div>
 
-                      <div className="md:col-span-2">
+                      <div>
                         <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
                         {/* ekraanil textarea */}
                         <textarea
@@ -653,6 +653,7 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
 
 
