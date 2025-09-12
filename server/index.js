@@ -6,51 +6,60 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
-import { Low } from 'lowdb'
-import { JSONFile } from 'lowdb/node'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
+import { MongoClient } from 'mongodb'
 
 const app = express()
-
-// suurem body limiit, et JSON import ei jookseks kinni
-app.use(express.json({ limit: '5mb' }))
-
+app.use(express.json())
 app.use(helmet())
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }))
 app.use(cors())
 
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dataDir = process.env.DATA_DIR || process.cwd()
-const dbFile = path.join(dataDir, 'data.json')
-const adapter = new JSONFile(dbFile)
-const db = new Low(adapter, { users: [], departments: [], questions: [], audits: [], answers: [] })
-await db.read()
-db.data ||= { users: [], departments: [], questions: [], audits: [], answers: [] }
-const save = () => db.write()
+
+// ---------- MongoDB ühendus ----------
+const MONGODB_URI = process.env.MONGODB_URI
+const MONGODB_DB  = process.env.MONGODB_DB || 'glamox_gpe'
+if (!MONGODB_URI) {
+  console.error('Missing MONGODB_URI env var')
+  process.exit(1)
+}
+const client = new MongoClient(MONGODB_URI)
+await client.connect()
+const db = client.db(MONGODB_DB)
+
+const Users       = db.collection('users')
+const Departments = db.collection('departments')
+const Questions   = db.collection('questions')
+const Audits      = db.collection('audits')
+const Answers     = db.collection('answers')
+
+// Indexid/unikaalsus
+await Users.createIndex({ email: 1 }, { unique: true })
+await Departments.createIndex({ id: 1 }, { unique: true })
+await Questions.createIndex({ id: 1 }, { unique: true })
+await Audits.createIndex({ id: 1 }, { unique: true })
 
 // --- Admin auto-bootstrap (ENV-ist) ---
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
 if (ADMIN_EMAIL && ADMIN_PASSWORD) {
-  const existing = db.data.users.find(u => u.email === ADMIN_EMAIL)
+  const existing = await Users.findOne({ email: ADMIN_EMAIL })
   const password_hash = bcrypt.hashSync(ADMIN_PASSWORD, 10)
   if (!existing) {
-    db.data.users.push({
+    await Users.insertOne({
       id: crypto.randomUUID(),
       email: ADMIN_EMAIL,
       role: 'admin',
       password_hash,
     })
-    await save()
     console.log('Bootstrap: loodud admin kasutaja ->', ADMIN_EMAIL)
   } else if (!bcrypt.compareSync(ADMIN_PASSWORD, existing.password_hash)) {
-    existing.password_hash = password_hash
-    await save()
+    await Users.updateOne({ _id: existing._id }, { $set: { password_hash } })
     console.log('Bootstrap: uuendasin admin parooli ->', ADMIN_EMAIL)
   }
 }
@@ -73,7 +82,7 @@ function requireRole(role) {
 // --- Login ---
 app.post('/auth/login', async (req,res) => {
   const { email, password } = req.body || {}
-  const user = db.data.users.find(u => u.email === email)
+  const user = await Users.findOne({ email })
   if (!user) return res.status(401).json({ error: 'invalid credentials' })
   if (!bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'invalid credentials' })
   const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '6h' })
@@ -81,116 +90,105 @@ app.post('/auth/login', async (req,res) => {
 })
 
 // --- Schema ---
-app.get('/api/schema', (req,res) => {
-  const deps = db.data.departments, questions = db.data.questions
+app.get('/api/schema', async (req,res) => {
+  const deps = await Departments.find({}).sort({ name: 1 }).toArray()
+  const qs   = await Questions.find({}).toArray()
+  const byDep = new Map()
+  for (const d of deps) byDep.set(d.id, [])
+  for (const q of qs) {
+    const list = byDep.get(q.department_id)
+    if (list) list.push({
+      id: q.id,
+      text: q.text,
+      clause: q.clause || undefined,
+      stds: q.stds || [],
+      guidance: q.guidance || undefined,
+      tags: q.tags || []
+    })
+  }
   const schema = {
-    meta: { version: 'glx-gpe-render', org: '(server)' },
-    departments: deps.map(d => ({
-      id: d.id, name: d.name,
-      questions: questions.filter(q => q.department_id === d.id).map(q => ({
-        id: q.id, text: q.text, clause: q.clause || undefined, stds: q.stds || [], guidance: q.guidance || undefined, tags: q.tags || []
-      }))
-    }))
+    meta: { version: 'glx-gpe-mongo', org: '(server)' },
+    departments: deps.map(d => ({ id: d.id, name: d.name, questions: byDep.get(d.id) || [] }))
   }
   res.json(schema)
-})
-
-// --- Schema EXPORT (backup) ---
-app.get('/api/schema/export', authRequired, requireRole('admin'), (req,res) => {
-  const payload = {
-    exported_at: new Date().toISOString(),
-    departments: db.data.departments,
-    questions: db.data.questions,
-  }
-  res.json(payload)
-})
-
-// --- Schema IMPORT (restore/replace) ---
-app.post('/api/schema/import', authRequired, requireRole('admin'), async (req,res) => {
-  try {
-    const { departments, questions } = req.body || {}
-    if (!Array.isArray(departments) || !Array.isArray(questions)) {
-      return res.status(400).json({ error: 'invalid payload' })
-    }
-
-    // Väike valideerimine
-    const depIds = new Set()
-    for (const d of departments) {
-      if (!d.id || !d.name) return res.status(400).json({ error: 'department missing id or name' })
-      if (depIds.has(d.id)) return res.status(400).json({ error: 'duplicate department id: ' + d.id })
-      depIds.add(d.id)
-    }
-    const qIds = new Set()
-    for (const q of questions) {
-      if (!q.id || !q.department_id || !q.text) return res.status(400).json({ error: 'question missing fields' })
-      if (!depIds.has(q.department_id)) return res.status(400).json({ error: 'question references unknown department: ' + q.department_id })
-      if (qIds.has(q.id)) return res.status(400).json({ error: 'duplicate question id: ' + q.id })
-      qIds.add(q.id)
-    }
-
-    db.data.departments = departments
-    db.data.questions = questions
-    await save()
-    res.json({ ok: true, departments: departments.length, questions: questions.length })
-  } catch (e) {
-    console.error('IMPORT error:', e)
-    res.status(500).json({ error: 'import failed' })
-  }
 })
 
 // --- Departments CRUD ---
 app.post('/api/departments', authRequired, requireRole('admin'), async (req,res) => {
   const { id, name } = req.body || {}
   if (!id || !name) return res.status(400).json({ error: 'id and name required' })
-  if (db.data.departments.find(d => d.id === id)) return res.status(400).json({ error: 'id exists' })
-  db.data.departments.push({ id, name }); await save(); res.json({ ok: true })
+  try {
+    await Departments.insertOne({ id, name })
+    res.json({ ok: true })
+  } catch (e) {
+    if (String(e).includes('E11000')) return res.status(400).json({ error: 'id exists' })
+    throw e
+  }
 })
 app.put('/api/departments/:id', authRequired, requireRole('admin'), async (req,res) => {
-  const dep = db.data.departments.find(d => d.id === req.params.id)
-  if (!dep) return res.status(404).json({ error: 'not found' })
-  dep.name = req.body.name ?? dep.name; await save(); res.json({ ok: true })
+  const r = await Departments.updateOne({ id: req.params.id }, { $set: { name: req.body.name } })
+  if (!r.matchedCount) return res.status(404).json({ error: 'not found' })
+  res.json({ ok: true })
 })
 app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (req,res) => {
-  db.data.questions = db.data.questions.filter(q => q.department_id !== req.params.id)
-  db.data.departments = db.data.departments.filter(d => d.id !== req.params.id)
-  await save(); res.json({ ok: true })
+  await Questions.deleteMany({ department_id: req.params.id })
+  await Departments.deleteOne({ id: req.params.id })
+  res.json({ ok: true })
 })
 
 // --- Questions CRUD ---
 app.post('/api/questions', authRequired, requireRole('admin'), async (req,res) => {
   const { id, department_id, text, clause, stds, guidance, tags } = req.body || {}
   if (!id || !department_id || !text || !stds) return res.status(400).json({ error: 'id, department_id, text, stds required' })
-  db.data.questions.push({ id, department_id, text, clause: clause || null, stds: Array.isArray(stds)? stds : String(stds).split(' '), guidance: guidance || null, tags: tags || [] })
-  await save(); res.json({ ok: true })
+  try {
+    await Questions.insertOne({
+      id, department_id, text,
+      clause: clause || null,
+      stds: Array.isArray(stds) ? stds : String(stds).split(' '),
+      guidance: guidance || null,
+      tags: tags || []
+    })
+    res.json({ ok: true })
+  } catch (e) {
+    if (String(e).includes('E11000')) return res.status(400).json({ error: 'id exists' })
+    throw e
+  }
 })
 app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
-  const q = db.data.questions.find(x => x.id === req.params.id)
-  if (!q) return res.status(404).json({ error: 'not found' })
   const { text, clause, stds, guidance, department_id } = req.body || {}
-  if (text !== undefined) q.text = text
-  if (clause !== undefined) q.clause = clause
-  if (stds !== undefined) q.stds = Array.isArray(stds) ? stds : String(stds).split(' ')
-  if (guidance !== undefined) q.guidance = guidance
-  if (department_id !== undefined) q.department_id = department_id
-  await save(); res.json({ ok: true })
+  const doc = {}
+  if (text !== undefined) doc.text = text
+  if (clause !== undefined) doc.clause = clause
+  if (stds !== undefined) doc.stds = Array.isArray(stds) ? stds : String(stds).split(' ')
+  if (guidance !== undefined) doc.guidance = guidance
+  if (department_id !== undefined) doc.department_id = department_id
+  const r = await Questions.updateOne({ id: req.params.id }, { $set: doc })
+  if (!r.matchedCount) return res.status(404).json({ error: 'not found' })
+  res.json({ ok: true })
 })
 app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
-  db.data.questions = db.data.questions.filter(q => q.id !== req.params.id)
-  await save(); res.json({ ok: true })
+  await Questions.deleteOne({ id: req.params.id })
+  res.json({ ok: true })
 })
 
 // --- Audits ---
 app.post('/api/audits', authRequired, requireRole(['admin','auditor']), async (req,res) => {
   const { department_id, standards, answers } = req.body || {}
-  const id = (db.data.audits.at(-1)?.id || 0) + 1
-  db.data.audits.push({ id, department_id, standards: standards || [], created_at: new Date().toISOString() })
-  for (const a of (answers || [])) db.data.answers.push({ audit_id: id, ...a })
-  await save(); res.json({ ok: true, audit_id: id })
+  // loo lihtne kasvav id Mongo sees
+  const last = await Audits.find({}).sort({ id: -1 }).limit(1).toArray()
+  const id = (last[0]?.id || 0) + 1
+  await Audits.insertOne({ id, department_id, standards: standards || [], created_at: new Date().toISOString() })
+  if (Array.isArray(answers) && answers.length) {
+    const docs = answers.map(a => ({ audit_id: id, ...a }))
+    await Answers.insertMany(docs)
+  }
+  res.json({ ok: true, audit_id: id })
 })
-app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','external']), (req,res) => {
-  const a = db.data.audits.find(x => x.id === Number(req.params.id))
+app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','external']), async (req,res) => {
+  const id = Number(req.params.id)
+  const a = await Audits.findOne({ id })
   if (!a) return res.status(404).json({ error: 'not found' })
-  const ans = db.data.answers.filter(x => x.audit_id === a.id)
+  const ans = await Answers.find({ audit_id: id }).toArray()
   res.json({ audit: a, answers: ans })
 })
 
@@ -200,6 +198,6 @@ app.get(/^(?!\/api).*/, (req,res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 
-app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Render) http://localhost:${PORT}`))
+app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Mongo) http://localhost:${PORT}`))
 
 
