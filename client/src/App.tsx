@@ -8,6 +8,16 @@ type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; not
 
 const API = (import.meta.env.VITE_API_URL ?? window.location.origin)
 
+// genereeri protsessi ID nimest (ei pea käsitsi sisestama)
+function slugify(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}]+/gu, '-') // tühikud ja märkide plokid -> '-'
+    .replace(/(^-|-$)/g, '')          // äärest kriipsud maha
+    .slice(0, 50)                      // lühenda
+}
+
 export default function App() {
   const [token, setToken] = useState<string | null>(null)
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
@@ -47,7 +57,9 @@ export default function App() {
     stds: string,
     guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
-  const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
+
+  // MUUDETUD: depEdit ei vaja käsitsi ID-d; valik rippmenüüst + nimi sisend
+  const [depEdit, setDepEdit] = useState<{ selectedId: string; name: string }>({ selectedId: '', name: '' })
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
@@ -248,7 +260,7 @@ export default function App() {
           textarea { border: 1px solid #000 !important; overflow: visible !important; }
           select, input { border: 1px solid #000 !important; }
           .ev-field   { min-height: 8rem !important; }
-          .note-field { min-height: 10.4rem !important; }
+          .note-field { min-height: 10.4rem !important; } /* ~ +30% */
           .textarea-print { white-space: pre-wrap; border:1px solid #000; border-radius:.25rem; padding:.25rem .5rem; }
           .img-print { width: 100% !important; height: auto !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -385,14 +397,68 @@ export default function App() {
               <div className="p-3 border rounded space-y-3">
                 <div className="font-semibold">Redigeerimine</div>
 
+                {/* MUUDETUD: Protsess – vali olemasolev + nimemuutus; uuel lisamisel ID tuletatakse nimest */}
                 <div>
                   <div className="text-xs">Protsess</div>
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
-                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
+
+                  <select
+                    className="border rounded px-2 py-1 mr-2 mb-1"
+                    value={depEdit.selectedId}
+                    onChange={e => {
+                      const id = e.target.value
+                      const d = schema?.departments.find(x => x.id === id)
+                      setDepEdit({ selectedId: id, name: d?.name ?? '' })
+                    }}
+                  >
+                    <option value="">— vali olemasolev protsess (muutmiseks/kustutamiseks) —</option>
+                    {schema?.departments.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+
+                  <input
+                    className="border rounded px-2 py-1 mr-2 mb-1"
+                    placeholder="protsessi nimetus"
+                    value={depEdit.name}
+                    onChange={e => setDepEdit({ ...depEdit, name: e.target.value })}
+                  />
+
                   <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
+                    <button
+                      className="px-2 py-1 border rounded"
+                      onClick={() => {
+                        const name = depEdit.name.trim()
+                        if (!name) return alert('Sisesta protsessi nimetus.')
+                        const id = slugify(name)
+                        post('/api/departments', { id, name })
+                      }}
+                    >
+                      Lisa (ID tuletatakse nimest)
+                    </button>
+
+                    <button
+                      className="px-2 py-1 border rounded"
+                      onClick={() => {
+                        if (!depEdit.selectedId) return alert('Vali vasakult protsess, mida muuta.')
+                        const name = depEdit.name.trim()
+                        if (!name) return alert('Sisesta uus nimetus.')
+                        post('/api/departments/' + depEdit.selectedId, { name }, 'PUT')
+                      }}
+                    >
+                      Muuda
+                    </button>
+
+                    <button
+                      className="px-2 py-1 border rounded"
+                      onClick={() => {
+                        if (!depEdit.selectedId) return alert('Vali vasakult protsess, mida kustutada.')
+                        if (!confirm('Kustutan protsessi ja selle küsimused?')) return
+                        del('/api/departments/' + depEdit.selectedId)
+                        setDepEdit({ selectedId: '', name: '' })
+                      }}
+                    >
+                      Kustuta
+                    </button>
                   </div>
                 </div>
 
@@ -458,16 +524,20 @@ export default function App() {
                            'bg-red-100 border-red-600')
                         }>ISO {s}</span>
                       ))}
-                      {q.clause && (
-                        <span className="text-xs border px-2 py-0.5 rounded bg-gray-100 border-gray-400">
-                          Standardi nõue: {q.clause}
-                        </span>
-                      )}
+                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded bg-gray-100">Standardi nõue: {q.clause}</span>}
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
+
+                      {/* TAGASI TOODUD: Admini Muuda/Kustuta nupud küsimuse juures */}
+                      {role === 'admin' && (
+                        <span className="ml-2 space-x-2 no-print">
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
+                          <button className="text-xs px-2 py-0.5 border rounded" onClick={() => del('/api/questions/' + q.id)}>Kustuta</button>
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-2">{q.text}</div>
@@ -524,7 +594,7 @@ export default function App() {
                       </label>
                     </div>
 
-                    {/* Tõendid / Kommentaar */}
+                    {/* Tõendid / Märkus (praegune paigutus säilib) */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
@@ -541,7 +611,7 @@ export default function App() {
                       </div>
 
                       <div className="md:col-span-2">
-                        <div className="text-xs font-semibold mb-1">Kommentaar; PE; MV</div>
+                        <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
                         {/* ekraanil textarea */}
                         <textarea
                           id={'note-' + q.id}
@@ -549,7 +619,7 @@ export default function App() {
                             'border rounded px-2 py-1 w-full min-h-32 resize-y note-field hide-in-print ' +
                             (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                           }
-                          placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Kommentaar; PE; MV (kohustuslik)' : 'Kommentaar; PE; MV'}
+                          placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
                           value={a.note || ''}
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
@@ -559,7 +629,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* PILDID – allpool tõenditest/kommentaarist */}
+                    {/* PILDID – allpool tõenditest/märkustest */}
                     <div className="mt-2">
                       <div className="text-xs font-semibold mb-1">Lisa pilt</div>
                       <input type="file" accept="image/*" multiple onChange={e => addImages(q.id, e.target.files)} className="no-print" />
@@ -597,11 +667,7 @@ export default function App() {
                              'bg-red-100 border-red-600')
                           }>ISO {st}</span>
                         ))}
-                        {s.clause && (
-                          <span className="border px-2 py-0.5 rounded bg-gray-100 border-gray-400">
-                            Nõue: {s.clause}
-                          </span>
-                        )}
+                        {s.clause && <span className="border px-2 py-0.5 rounded">Nõue: {s.clause}</span>}
                         <span className={'border px-2 py-0.5 rounded ' + (s.type==='Mittevastavus' ? 'bg-red-100 border-red-600' : 'bg-blue-100 border-blue-600')}>
                           {s.type}
                         </span>
@@ -651,3 +717,4 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
