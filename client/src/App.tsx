@@ -8,20 +8,6 @@ type Answer = { vs?: boolean; pe?: boolean; mv?: boolean; evidence?: string; not
 
 const API = (import.meta.env.VITE_API_URL ?? window.location.origin)
 
-// ---------- util ----------
-function slugify(src: string): string {
-  const map: Record<string, string> = {
-    'ä': 'a', 'ö': 'o', 'õ': 'o', 'ü': 'u', 'š': 's', 'ž': 'z',
-    'Ä': 'a', 'Ö': 'o', 'Õ': 'o', 'Ü': 'u', 'Š': 's', 'Ž': 'z',
-  }
-  return src
-    .trim()
-    .replace(/[ÄÖÕÜŠŽäöõüšž]/g, ch => map[ch] ?? ch)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
 export default function App() {
   const [token, setToken] = useState<string | null>(null)
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
@@ -61,9 +47,7 @@ export default function App() {
     stds: string,
     guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
-
-  // NB! Protsessi ID-d ei küsi enam. Genereerime nime põhjal.
-  const [depEdit, setDepEdit] = useState<{ name: string }>({ name: '' })
+  const [depEdit, setDepEdit] = useState<{ id: string; name: string }>({ id: '', name: '' })
 
   async function refreshSchema() {
     const s: Schema = await fetch(API + '/api/schema').then(r => r.json())
@@ -246,34 +230,6 @@ export default function App() {
 
   function startEditQuestion(q: Question) {
     setQEdit({ mode: 'edit', id: q.id, department_id: deptId, text: q.text, clause: q.clause || '', stds: q.stds.join(' '), guidance: q.guidance || '' })
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-  async function removeQuestion(id: string) {
-    if (!confirm(`Kustuta küsimus ${id}?`)) return
-    await del('/api/questions/' + id)
-  }
-
-  // Protsess: lisa/muuda/kustuta — ilma käsitsi ID-ta
-  async function addDepartment() {
-    const name = depEdit.name.trim()
-    if (!name) { alert('Sisesta protsessi nimetus'); return }
-    const id = slugify(name)
-    await post('/api/departments', { id, name })
-    setDeptId(id)
-    setDepEdit({ name: '' })
-  }
-  async function updateDepartment() {
-    const name = depEdit.name.trim()
-    const id = deptId || slugify(name)
-    if (!id) { alert('Vali päisest protsess või sisesta nimetus'); return }
-    await post('/api/departments/' + id, { name: name || (dept?.name ?? '') }, 'PUT')
-  }
-  async function deleteDepartment() {
-    const id = deptId || slugify(depEdit.name)
-    if (!id) { alert('Vali päisest protsess'); return }
-    if (!confirm(`Kustuta protsess "${dept?.name || depEdit.name}"?`)) return
-    await del('/api/departments/' + id)
-    setDeptId('')
   }
 
   return (
@@ -292,7 +248,7 @@ export default function App() {
           textarea { border: 1px solid #000 !important; overflow: visible !important; }
           select, input { border: 1px solid #000 !important; }
           .ev-field   { min-height: 8rem !important; }
-          .note-field { min-height: 13rem !important; } /* +~30% kõrgem */
+          .note-field { min-height: 10.4rem !important; }
           .textarea-print { white-space: pre-wrap; border:1px solid #000; border-radius:.25rem; padding:.25rem .5rem; }
           .img-print { width: 100% !important; height: auto !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -429,27 +385,17 @@ export default function App() {
               <div className="p-3 border rounded space-y-3">
                 <div className="font-semibold">Redigeerimine</div>
 
-                {/* PROTSESS: ilma käsitsi ID-ta */}
                 <div>
-                  <div className="text-xs mb-1">Protsess</div>
-                  <input
-                    className="border rounded px-2 py-1 mr-2 w-full"
-                    placeholder="nimetus (nt Ostmine)"
-                    value={depEdit.name}
-                    onChange={e => setDepEdit({ name: e.target.value })}
-                  />
-                  <div className="text-xs text-gray-500 mt-1">
-                    {depEdit.name.trim() && <>ID eelvaade: <code>{slugify(depEdit.name)}</code></>}
-                    {!depEdit.name.trim() && deptId && <>Valitud: <code>{deptId}</code></>}
-                  </div>
+                  <div className="text-xs">Protsess</div>
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="id (nt ostmine)" value={depEdit.id} onChange={e => setDepEdit({ ...depEdit, id: e.target.value })} />
+                  <input className="border rounded px-2 py-1 mr-2" placeholder="nimetus" value={depEdit.name} onChange={e => setDepEdit({ ...depEdit, name: e.target.value })} />
                   <div className="mt-1 space-x-2">
-                    <button className="px-2 py-1 border rounded" onClick={addDepartment}>Lisa</button>
-                    <button className="px-2 py-1 border rounded" onClick={updateDepartment}>Muuda</button>
-                    <button className="px-2 py-1 border rounded" onClick={deleteDepartment}>Kustuta</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments', { id: depEdit.id, name: depEdit.name })}>Lisa</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => post('/api/departments/' + depEdit.id, { name: depEdit.name }, 'PUT')}>Muuda</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => del('/api/departments/' + depEdit.id)}>Kustuta</button>
                   </div>
                 </div>
 
-                {/* KÜSIMUS: lisa/muuda */}
                 <div>
                   <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
@@ -460,32 +406,15 @@ export default function App() {
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="Juhend auditeerijale" value={qEdit.guidance} onChange={e => setQEdit({ ...qEdit, guidance: e.target.value })} />
                   <div className="space-x-2">
                     {qEdit.mode === 'add' ? (
-                      <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
+                      <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions', { id: qEdit.id, department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance })}>Lisa küsimus</button>
                     ) : (
                       <>
-                        <button className="px-2 py-1 border rounded" onClick={() => post('/api/questions/' + qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
-                        <button className="px-2 py-1 border rounded" onClick={() => { setQEdit({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' }) }}>Tühista</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>post('/api/questions/'+qEdit.id, { department_id: qEdit.department_id || deptId, text: qEdit.text, clause: qEdit.clause, stds: qEdit.stds.split(' '), guidance: qEdit.guidance }, 'PUT')}>Salvesta</button>
+                        <button className="px-2 py-1 border rounded" onClick={()=>{ setQEdit({mode:'add', id:'', department_id:'', text:'', clause:'', stds:'9001', guidance:''}) }}>Tühista</button>
                       </>
                     )}
                   </div>
                 </div>
-
-                {/* Valitud protsessi küsimused – MUUDA/KUSTUTA */}
-                {dept && (
-                  <div className="border-t pt-2">
-                    <div className="text-xs font-semibold mb-1">Küsimused protsessis “{dept.name}”</div>
-                    <div className="space-y-1 max-h-72 overflow-auto pr-1">
-                      {dept.questions.map(q => (
-                        <div key={q.id} className="text-xs border rounded p-2 flex items-start gap-2">
-                          <span className="border px-2 py-0.5 rounded">{q.id}</span>
-                          <span className="flex-1">{q.text.slice(0, 80)}{q.text.length > 80 ? '…' : ''}</span>
-                          <button className="px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
-                          <button className="px-2 py-0.5 border rounded" onClick={() => removeQuestion(q.id)}>Kustuta</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Backend schema varundus/taastus */}
                 <div className="border-t pt-2">
@@ -529,20 +458,16 @@ export default function App() {
                            'bg-red-100 border-red-600')
                         }>ISO {s}</span>
                       ))}
-                      {q.clause && <span className="text-xs border px-2 py-0.5 rounded">Standardi nõue: {q.clause}</span>}
+                      {q.clause && (
+                        <span className="text-xs border px-2 py-0.5 rounded bg-gray-100 border-gray-400">
+                          Standardi nõue: {q.clause}
+                        </span>
+                      )}
                       <span className="ml-auto flex items-center gap-1">
                         {a.mv && <Excl color="red" title="Mittevastavus" />}
                         {!a.mv && a.pe && <Excl color="blue" title="Parendusettepanek" />}
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
-
-                      {/* Admini kiired nupud iga kaardi peal */}
-                      {role === 'admin' && (
-                        <span className="ml-2 flex gap-1">
-                          <button className="px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
-                          <button className="px-2 py-0.5 border rounded" onClick={() => removeQuestion(q.id)}>Kustuta</button>
-                        </span>
-                      )}
                     </div>
 
                     <div className="mt-2">{q.text}</div>
@@ -599,7 +524,7 @@ export default function App() {
                       </label>
                     </div>
 
-                    {/* Tõendid / Märkus */}
+                    {/* Tõendid / Kommentaar */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
@@ -616,7 +541,7 @@ export default function App() {
                       </div>
 
                       <div className="md:col-span-2">
-                        <div className="text-xs font-semibold mb-1">Märkus: PE/MV</div>
+                        <div className="text-xs font-semibold mb-1">Kommentaar; PE; MV</div>
                         {/* ekraanil textarea */}
                         <textarea
                           id={'note-' + q.id}
@@ -624,7 +549,7 @@ export default function App() {
                             'border rounded px-2 py-1 w-full min-h-32 resize-y note-field hide-in-print ' +
                             (((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'border-red-500 ring-1 ring-red-300' : '')
                           }
-                          placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Märkus: PE/MV (kohustuslik)' : 'Märkus: PE/MV'}
+                          placeholder={((a.mv || a.pe) && !(a.note && a.note.trim())) ? 'Kommentaar; PE; MV (kohustuslik)' : 'Kommentaar; PE; MV'}
                           value={a.note || ''}
                           onInput={autoResize}
                           onChange={e => setAnswers(p => ({ ...p, [q.id]: { ...p[q.id], note: e.target.value } }))}
@@ -634,7 +559,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* PILDID – allpool tõenditest/märkustest */}
+                    {/* PILDID – allpool tõenditest/kommentaarist */}
                     <div className="mt-2">
                       <div className="text-xs font-semibold mb-1">Lisa pilt</div>
                       <input type="file" accept="image/*" multiple onChange={e => addImages(q.id, e.target.files)} className="no-print" />
@@ -672,7 +597,11 @@ export default function App() {
                              'bg-red-100 border-red-600')
                           }>ISO {st}</span>
                         ))}
-                        {s.clause && <span className="border px-2 py-0.5 rounded">Nõue: {s.clause}</span>}
+                        {s.clause && (
+                          <span className="border px-2 py-0.5 rounded bg-gray-100 border-gray-400">
+                            Nõue: {s.clause}
+                          </span>
+                        )}
                         <span className={'border px-2 py-0.5 rounded ' + (s.type==='Mittevastavus' ? 'bg-red-100 border-red-600' : 'bg-blue-100 border-blue-600')}>
                           {s.type}
                         </span>
