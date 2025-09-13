@@ -58,7 +58,7 @@ export default function App() {
     guidance: string
   }>({ mode: 'add', id: '', department_id: '', text: '', clause: '', stds: '9001', guidance: '' })
 
-  // MUUDETUD: depEdit ei vaja käsitsi ID-d; valik rippmenüüst + nimi sisend
+  // depEdit: vali olemasolev + nimi (ID tuletatakse nimest Lisamisel)
   const [depEdit, setDepEdit] = useState<{ selectedId: string; name: string }>({ selectedId: '', name: '' })
 
   async function refreshSchema() {
@@ -175,6 +175,67 @@ export default function App() {
     }
   }
 
+  // [XLSX] --- Exceli import (.xlsx) ---
+  async function importSchemaXLSX(file: File) {
+    if (!token || role !== 'admin') { alert('Vajalik admini sisselogimine.'); return }
+    try {
+      const XLSX: any = await import('xlsx') // dünaamiline import
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      // loe JSON-ina, jäta tühjad väljad tühjaks stringiks
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
+
+      // toetame päiseid (eesti/inglise): 
+      // "Protsess" (kuhu küsimus läheb), "Küsimuse ID", "Küsimuse tekst", "Standardi nõue", "Standard", "Juhend auditeerijale"
+      const pick = (row: any, keys: string[]): string =>
+        String(keys.map(k => row[k]).find(v => v !== undefined && v !== null && String(v).trim() !== '') ?? '').trim()
+
+      // Käime läbi kõik read ja teeme upsert
+      for (const row of rows) {
+        const processName =
+          pick(row, ['Protsess', 'Protsess (küsimuse alla)', 'Department', 'Osakond', 'Process', 'Process Name'])
+        const questionId =
+          pick(row, ['Küsimuse ID', 'Küsimus ID', 'Question ID', 'ID'])
+        const questionText =
+          pick(row, ['Küsimuse tekst', 'Küsimus', 'Question', 'Text'])
+        const clause =
+          pick(row, ['Standardi nõue', 'Klausel', 'Clause'])
+        const standardsRaw =
+          pick(row, ['Standard', 'Standardid', 'Standards'])
+        const guidance =
+          pick(row, ['Juhend auditeerijale', 'Juhend', 'Guidance'])
+
+        if (!processName) continue // ilma protsessita ei tee midagi
+
+        const depId = slugify(processName)
+        await upsertDepartment({ id: depId, name: processName })
+
+        // kui reas on ka küsimus, siis upsertime selle
+        if (questionId && questionText) {
+          const stdsArr = standardsRaw
+            ? standardsRaw.split(/[ ,;]+/).filter(Boolean) as Std[]
+            : ([] as Std[])
+          const q: Question = {
+            id: questionId,
+            text: questionText,
+            clause: clause || undefined,
+            stds: stdsArr,
+            guidance: guidance || undefined
+          }
+          await upsertQuestion(q, depId)
+        }
+      }
+
+      await refreshSchema()
+      alert('Exceli import õnnestus.')
+    } catch (e:any) {
+      console.error(e)
+      alert('Exceli import ebaõnnestus (vaata konsooli).')
+    }
+  }
+  // [/XLSX]
+
   // --- Partial audit: save/load locally ---
   function downloadPartial() {
     const payload = {
@@ -260,7 +321,7 @@ export default function App() {
           textarea { border: 1px solid #000 !important; overflow: visible !important; }
           select, input { border: 1px solid #000 !important; }
           .ev-field   { min-height: 8rem !important; }
-          .note-field { min-height: 10.4rem !important; } /* ~ +30% */
+          .note-field { min-height: 10.4rem !important; }
           .textarea-print { white-space: pre-wrap; border:1px solid #000; border-radius:.25rem; padding:.25rem .5rem; }
           .img-print { width: 100% !important; height: auto !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -286,7 +347,7 @@ export default function App() {
 
       {/* Päis */}
       <section className="mb-3 p-3 border rounded">
-        <div className="grid md:grid-cols-2 gap-3">
+        <div className="grid md-grid-cols-2 md:grid-cols-2 gap-3">
           <div>
             <label htmlFor="hdr-date" className="block text-xs font-semibold">Kuupäev *</label>
             <input id="hdr-date" type="date" className="w-full border rounded px-2 py-1" value={date} onChange={e => setDate(e.target.value)} />
@@ -397,7 +458,7 @@ export default function App() {
               <div className="p-3 border rounded space-y-3">
                 <div className="font-semibold">Redigeerimine</div>
 
-                {/* MUUDETUD: Protsess – vali olemasolev + nimemuutus; uuel lisamisel ID tuletatakse nimest */}
+                {/* Protsess */}
                 <div>
                   <div className="text-xs">Protsess</div>
 
@@ -462,6 +523,7 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Küsimus */}
                 <div>
                   <div className="text-xs">Küsimus ({qEdit.mode === 'add' ? 'lisa' : 'muuda'}):</div>
                   <input className="border rounded px-2 py-1 mr-2 mb-1" placeholder="küsimuse id (nt Q-100)" value={qEdit.id} onChange={e => setQEdit({ ...qEdit, id: e.target.value })} />
@@ -485,13 +547,29 @@ export default function App() {
                 {/* Backend schema varundus/taastus */}
                 <div className="border-t pt-2">
                   <div className="text-xs font-semibold mb-1">Varunda / taasta (JSON)</div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <button className="px-2 py-1 border rounded" onClick={exportSchemaJSON}>Ekspordi JSON</button>
                     <label className="px-2 py-1 border rounded cursor-pointer">
                       Impordi JSON
                       <input type="file" className="hidden" accept="application/json"
                         onChange={e => e.target.files && importSchemaJSON(e.target.files[0])}/>
                     </label>
+
+                    {/* [XLSX] Exceli import */}
+                    <label className="px-2 py-1 border rounded cursor-pointer">
+                      Impordi Excel (.xlsx)
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        onChange={e => e.target.files && importSchemaXLSX(e.target.files[0])}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="text-xs text-gray-600 mt-2">
+                    Exceli veerud (soovituslikud pealkirjad):<br/>
+                    <span className="font-mono">Protsess</span>, <span className="font-mono">Küsimuse ID</span>, <span className="font-mono">Küsimuse tekst</span>, <span className="font-mono">Standardi nõue</span>, <span className="font-mono">Standard</span> (nt <span className="font-mono">9001 14001</span>), <span className="font-mono">Juhend auditeerijale</span>.
                   </div>
                 </div>
               </div>
@@ -531,7 +609,6 @@ export default function App() {
                         {!a.mv && a.vs && <Check color="green" title="Vastab standardile" />}
                       </span>
 
-                      {/* TAGASI TOODUD: Admini Muuda/Kustuta nupud küsimuse juures */}
                       {role === 'admin' && (
                         <span className="ml-2 space-x-2 no-print">
                           <button className="text-xs px-2 py-0.5 border rounded" onClick={() => startEditQuestion(q)}>Muuda</button>
@@ -594,7 +671,7 @@ export default function App() {
                       </label>
                     </div>
 
-                    {/* Tõendid / Märkus (praegune paigutus säilib) */}
+                    {/* Tõendid / Märkus */}
                     <div className="mt-2 grid md:grid-cols-3 gap-2 items-stretch qa-fields">
                       <div className="md:col-span-1">
                         <div className="text-xs font-semibold mb-1">Tõendid</div>
@@ -717,4 +794,5 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
 
