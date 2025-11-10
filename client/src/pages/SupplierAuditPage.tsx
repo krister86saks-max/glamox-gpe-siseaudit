@@ -427,7 +427,12 @@ export default function SupplierAuditPage({ token, role }: Props) {
             <div className="flex gap-2 items-center mb-2">
               <input className="border p-2 rounded w-24" placeholder="Kood"
                      value={point.code ?? ''} onChange={e=>updatePoint(point.id, { code: e.target.value })} />
-              <input className="border p-2 rounded flex-1" placeholder="Punkti pealkiri"
+              <input
+  className="border p-2 rounded flex-1 font-bold text-gray-900"
+  placeholder="Punkti pealkiri"
+  value={point.title}
+  onChange={e => updatePoint(point.id, { title: e.target.value })}
+/>
                      value={point.title} onChange={e=>updatePoint(point.id, { title: e.target.value })} />
               <div className="ml-auto flex gap-2">
                 <button className="px-3 py-1 border rounded" onClick={() => addSub(point, 'open')}>+ Küsimus</button>
