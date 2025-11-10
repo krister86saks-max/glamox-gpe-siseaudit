@@ -18,6 +18,9 @@ interface Props {
 export default function SupplierAuditPage({ token, role }: Props) {
   const [audit, setAudit] = useState<SupplierAudit | null>(null);
 
+  // “Auditeeritav” hoian lokaalses state’is, et mitte muuta globaalseid tüüpe
+  const [auditee, setAuditee] = useState<string>("");
+
   // Mallid
   const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([]);
   const [tplId, setTplId] = useState<string>("");
@@ -31,7 +34,6 @@ export default function SupplierAuditPage({ token, role }: Props) {
       id: nanoid(),
       supplierName: "",
       auditor: "",
-      auditee: "", // <- "Auditeeritav"
       date: new Date().toISOString(),
       points: [],
       status: "draft",
@@ -206,7 +208,8 @@ export default function SupplierAuditPage({ token, role }: Props) {
   //--- Pooliku auditi alla/üleslaadimine ---
   function downloadPartial() {
     if (!audit) return;
-    const payload = { audit, images };
+    // lisame auditee meta alla, et mitte rikkuda SupplierAudit tüüpi
+    const payload = { audit, images, meta: { auditee } };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
@@ -226,6 +229,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       if (!j || !j.audit) throw new Error("vale fail");
       setAudit(j.audit as SupplierAudit);
       setImages(j.images || {});
+      setAuditee(j.meta?.auditee ?? ""); // loe meta alt tagasi
       alert("Poolik tarnijaaudit laetud.");
     } catch {
       alert("Pooliku auditi avamine ebaõnnestus.");
@@ -259,8 +263,8 @@ export default function SupplierAuditPage({ token, role }: Props) {
         <input
           className="border p-2 rounded"
           placeholder="Auditeeritav"
-          value={audit.auditee ?? ""}
-          onChange={(e) => setAudit({ ...audit, auditee: e.target.value })}
+          value={auditee}
+          onChange={(e) => setAuditee(e.target.value)}
         />
         <input
           className="border p-2 rounded"
