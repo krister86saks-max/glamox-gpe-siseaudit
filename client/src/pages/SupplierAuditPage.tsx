@@ -7,13 +7,16 @@ import type {
 
 type Role = 'admin' | 'auditor' | 'external' | null;
 
+// Laiendame auditit, et saaks „Auditeeritav“ välja turvaliselt hoida
+type SupplierAuditX = SupplierAudit & { auditee?: string };
+
 interface Props {
   token: string | null;   // saame App.tsx-st
   role: Role;             // saame App.tsx-st
 }
 
 export default function SupplierAuditPage({ token, role }: Props) {
-  const [audit, setAudit] = useState<SupplierAudit | null>(null);
+  const [audit, setAudit] = useState<SupplierAuditX | null>(null);
 
   // Mallid (serverist)
   const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([]);
@@ -29,11 +32,12 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
   // Init – tühi mustand
   useEffect(() => {
-    const draft: SupplierAudit = {
+    const draft: SupplierAuditX = {
       id: nanoid(),
       supplierName: '',
       date: new Date().toISOString(),
       auditor: '',
+      auditee: '',         // UUS väli – auditeeritav
       points: [],
       status: 'draft',
     };
@@ -143,7 +147,6 @@ export default function SupplierAuditPage({ token, role }: Props) {
     const name = window.prompt('Mallile nimi (nt "Supplier – Plastic Moulding")?');
     if (!name) return;
 
-    // Eemaldame vastuseväljad malli struktuurist
     const payload = {
       name,
       points: audit.points.map(p => ({
@@ -288,7 +291,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       const text = await file.text();
       const j = JSON.parse(text);
       if (!j || !j.audit) throw new Error('vale fail');
-      setAudit(j.audit as SupplierAudit);
+      setAudit(j.audit as SupplierAuditX);
       setImages(j.images || {});
       alert('Poolik tarnijaaudit laetud.');
     } catch {
@@ -302,26 +305,52 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Peaandmed */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-        <input className="border p-2 rounded" placeholder="Tarnija nimi"
-          value={audit.supplierName} onChange={e=>setAudit({ ...audit, supplierName: e.target.value })} />
-        <input className="border p-2 rounded" placeholder="Auditor"
-          value={audit.auditor} onChange={e=>setAudit({ ...audit, auditor: e.target.value })} />
-        <input className="border p-2 rounded" type="date"
-          value={audit.date.slice(0,10)} onChange={e=>setAudit({ ...audit, date: new Date(e.target.value).toISOString() })} />
+      {/* Peaandmed – lisatud „Auditeeritav“, muudetud „Audiitor“ */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+        <input
+          className="border p-2 rounded"
+          placeholder="Tarnija nimi"
+          value={audit.supplierName}
+          onChange={e => setAudit({ ...audit, supplierName: e.target.value })}
+        />
 
-        {/* Partial audit nupud */}
+        <input
+          className="border p-2 rounded"
+          placeholder="Audiitor"
+          value={audit.auditor}
+          onChange={e => setAudit({ ...audit, auditor: e.target.value })}
+        />
+
+        <input
+          className="border p-2 rounded"
+          placeholder="Auditeeritav"
+          value={audit.auditee ?? ''}
+          onChange={e => setAudit({ ...audit, auditee: e.target.value })}
+        />
+
+        <input
+          className="border p-2 rounded"
+          type="date"
+          value={audit.date.slice(0,10)}
+          onChange={e => setAudit({ ...audit, date: new Date(e.target.value).toISOString() })}
+        />
+
         <button className="border p-2 rounded" onClick={downloadPartial}>Lae alla poolik audit</button>
+
         <label className="border p-2 rounded text-center cursor-pointer">
           Ava poolik audit
-          <input type="file" className="hidden" accept="application/json" onChange={e => e.target.files && openPartial(e.target.files[0])} />
+          <input
+            type="file"
+            className="hidden"
+            accept="application/json"
+            onChange={e => e.target.files && openPartial(e.target.files[0])}
+          />
         </label>
       </div>
 
       {/* Mallid / auditi liigid */}
       <div className="space-y-2">
-        {/* Rida 1: valik + Ava küsimustik */}
+        {/* Rida 1: valik + Ava küsimustik + PDF */}
         <div className="flex flex-col md:flex-row md:items-center gap-2">
           <select
             className="border p-2 rounded md:min-w-[280px]"
@@ -333,7 +362,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
           </select>
 
           <button
-            className="border p-2 rounded md:ml-2"
+            className="border p-2 rounded bg-green-200 text-black hover:bg-green-300 transition"
             disabled={!tplId}
             onClick={()=>{
               const tpl = templates.find(t=>t.id===tplId);
