@@ -175,6 +175,86 @@ export default function SupplierAuditPage({ token, role }: Props) {
     alert('Mall salvestatud.');
   }
 
+  // --- Admin: muuda nime ---
+  async function renameTemplate() {
+    if (role !== 'admin' || !token || !tplId) return;
+    const current = templates.find(t => t.id === tplId);
+    const name = window.prompt('Uus auditi liigi nimi', current?.name || '');
+    if (!name) return;
+    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ name })
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert('Nime muutmine ebaõnnestus: ' + (j.error || r.statusText));
+      return;
+    }
+    const updated: SupplierAuditTemplate = await r.json();
+    setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
+    alert('Nimi muudetud.');
+  }
+
+  // --- Admin: kirjuta üle valitud liik praeguse küsimustikuga ---
+  async function overwriteTemplateFromCurrent() {
+    if (role !== 'admin' || !token || !tplId || !audit) return;
+    const current = templates.find(t => t.id === tplId);
+    if (!current) return;
+    if (!confirm(`Kirjuta üle "${current.name}" sisu praeguse küsimustikuga?`)) return;
+
+    const payload = {
+      name: current.name,
+      points: audit.points.map(p => ({
+        id: p.id,
+        code: p.code,
+        title: p.title,
+        comment: '',
+        subQuestions: p.subQuestions.map(s => ({
+          id: s.id,
+          text: s.text,
+          type: s.type,
+          options: s.options?.map(o => ({ id: o.id, label: o.label }))
+        }))
+      }))
+    };
+
+    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert('Üle kirjutamine ebaõnnestus: ' + (j.error || r.statusText));
+      return;
+    }
+    const updated: SupplierAuditTemplate = await r.json();
+    setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
+    alert('Küsimustik kirjutati üle.');
+  }
+
+  // --- Admin: kustuta liik ---
+  async function deleteTemplate() {
+    if (role !== 'admin' || !token || !tplId) return;
+    const current = templates.find(t => t.id === tplId);
+    if (!current) return;
+    if (!confirm(`Kustuta auditi liik "${current.name}"?`)) return;
+
+    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert('Kustutamine ebaõnnestus: ' + (j.error || r.statusText));
+      return;
+    }
+    setTemplates(prev => prev.filter(t => t.id !== tplId));
+    setTplId('');
+    alert('Auditi liik kustutatud.');
+  }
+
   // --- Pooliku auditi alla-/üleslaadimine ---
   function downloadPartial() {
     if (!audit) return;
@@ -222,25 +302,41 @@ export default function SupplierAuditPage({ token, role }: Props) {
         </label>
       </div>
 
-      {/* Mallid */}
+      {/* Mallid / auditi liigid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-        <select className="border p-2 rounded" value={tplId} onChange={e=>setTplId(e.target.value)}>
-          <option value="">— Vali auditi liik —</option> {/* ← muudatud */}
-          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <button className="border p-2 rounded"
+        <div className="flex gap-2">
+          <select className="border p-2 rounded" value={tplId} onChange={e=>setTplId(e.target.value)}>
+            <option value="">— Vali auditi liik —</option>
+            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+
+          {role === 'admin' && tplId && (
+            <>
+              <button className="border p-2 rounded" onClick={renameTemplate}>Muuda nime</button>
+              <button className="border p-2 rounded" onClick={overwriteTemplateFromCurrent}>
+                Kirjuta üle selle küsimustikuga
+              </button>
+              <button className="border p-2 rounded" onClick={deleteTemplate}>Kustuta liik</button>
+            </>
+          )}
+        </div>
+
+        <button
+          className="border p-2 rounded"
           disabled={!tplId}
           onClick={()=>{
             const tpl = templates.find(t=>t.id===tplId);
             if (tpl) applyTemplate(tpl);
           }}>
-          Ava küsimustik {/* ← muudatud */}
+          Ava küsimustik
         </button>
+
         {role === 'admin' && (
           <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
             Salvesta mallina
           </button>
         )}
+
         <button className="border p-2 rounded" onClick={handlePrint}>Salvesta PDF</button>
       </div>
 
@@ -345,4 +441,5 @@ function MultiOptionsEditor({ sub, onChange }: { sub: SubQuestion; onChange: (p:
     </div>
   );
 }
+
 
