@@ -297,7 +297,7 @@ export default function App() {
 
       <header className="flex items-center gap-3">
         <img src="/logo.webp" className="h-12" alt="Glamox" />
-        <h1 className="text-2xl font-bold">Glamox GPE Siseaudit</h1>
+        <h1 className="text-2xl font-bold">GPE Audiitor 2.0</h1>
         <div className="ml-auto flex items-center gap-2 no-print">
           {!token ? (
             <LoginForm defaultEmail="" defaultPass="" onLogin={login} />
