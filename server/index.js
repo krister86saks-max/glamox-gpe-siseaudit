@@ -1,4 +1,4 @@
-// server/index.js — LowDB + ESM (Renderile valmis)
+// server/index.js — LowDB + ESM + fallback serve (public || client/dist)
 import express from 'express'
 import cors from 'cors'
 import jwt from 'jsonwebtoken'
@@ -25,7 +25,7 @@ const db = new Low(adapter, {
   questions: [],
   audits: [],
   answers: [],
-  supplier_audit_templates: [] // hoidla tarnijamallidele
+  supplier_audit_templates: []
 })
 await db.read()
 if (!db.data) {
@@ -49,7 +49,7 @@ app.use(cors())
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 
-// --- admin bootstrap (kui puudub, teeme valmis) ---
+// --- admin bootstrap ---
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com'
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin123!'
 const existingAdmin = db.data.users.find(u => u.email === ADMIN_EMAIL)
@@ -102,11 +102,8 @@ app.get('/api/schema', async (_req, res) => {
   for (const q of qs) {
     const arr = byDep.get(q.department_id)
     if (arr) arr.push({
-      id: q.id,
-      text: q.text,
-      clause: q.clause || '',
-      stds: q.stds || [],
-      guidance: q.guidance || ''
+      id: q.id, text: q.text,
+      clause: q.clause || '', stds: q.stds || [], guidance: q.guidance || ''
     })
   }
   res.json({
@@ -204,16 +201,30 @@ function supplierRoutes(prefix) {
     res.json({ ok: true })
   })
 }
-
-// toetame nii /api/supplier/templates kui ka /api/supplier-audit-templates
 supplierRoutes('/api/supplier/templates')
 supplierRoutes('/api/supplier-audit-templates')
 
-// --- serveeri builditud klient ---
-app.use(express.static(path.join(__dirname, 'public')))
-app.get(/^(?!\/api).*/, (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'))
-})
+// --- serveeri frontend: server/public või fallback client/dist ---
+const SERVER_PUBLIC = path.join(__dirname, 'public')
+const CLIENT_DIST = path.resolve(__dirname, '../client/dist')
+
+let STATIC_ROOT = null
+if (fs.existsSync(path.join(SERVER_PUBLIC, 'index.html'))) {
+  STATIC_ROOT = SERVER_PUBLIC
+  console.log('Frontend: serving from server/public')
+} else if (fs.existsSync(path.join(CLIENT_DIST, 'index.html'))) {
+  STATIC_ROOT = CLIENT_DIST
+  console.log('Frontend: serving from client/dist (fallback)')
+} else {
+  console.warn('Frontend: no build found (neither server/public nor client/dist)')
+}
+
+if (STATIC_ROOT) {
+  app.use(express.static(STATIC_ROOT))
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(STATIC_ROOT, 'index.html'))
+  })
+}
 
 app.listen(PORT, () => {
   console.log(`Glamox Auditor (LowDB) http://localhost:${PORT}`)
