@@ -225,7 +225,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       {/* Mallid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
         <select className="border p-2 rounded" value={tplId} onChange={e=>setTplId(e.target.value)}>
-          <option value="">— Vali mall —</option>
+          <option value="">— Vali auditi liik —</option> {/* ← muudatud */}
           {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
         <button className="border p-2 rounded"
@@ -234,7 +234,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
             const tpl = templates.find(t=>t.id===tplId);
             if (tpl) applyTemplate(tpl);
           }}>
-          Laadi mall
+          Ava küsimustik {/* ← muudatud */}
         </button>
         {role === 'admin' && (
           <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
@@ -345,3 +345,4 @@ function MultiOptionsEditor({ sub, onChange }: { sub: SubQuestion; onChange: (p:
     </div>
   );
 }
+
