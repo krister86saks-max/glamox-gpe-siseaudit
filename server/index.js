@@ -1,4 +1,4 @@
-// server/index.js
+// server/index.js  — Mongo + fallback static (public || client/dist) + version endpoint
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
@@ -8,8 +8,13 @@ import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'fs'
 import crypto from 'crypto'
 import { MongoClient } from 'mongodb'
+
+// >>>——— VERSION TAG (muuda vajadusel) ———>>>
+const APP_VERSION = 'v-2025-11-10-21:39'  // ← see peab logis ja /__version peal näha olema
+// <<<——— VERSION TAG ———<<<
 
 const app = express()
 app.use(express.json())
@@ -21,7 +26,7 @@ const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// ---------- MongoDB ühendus ----------
+// ---------- MongoDB ----------
 const MONGODB_URI = process.env.MONGODB_URI
 const MONGODB_DB  = process.env.MONGODB_DB || 'glamox_gpe'
 if (!MONGODB_URI) {
@@ -38,25 +43,19 @@ const Questions   = db.collection('questions')
 const Audits      = db.collection('audits')
 const Answers     = db.collection('answers')
 
-// Indexid/unikaalsus
 await Users.createIndex({ email: 1 }, { unique: true })
 await Departments.createIndex({ id: 1 }, { unique: true })
 await Questions.createIndex({ id: 1 }, { unique: true })
 await Audits.createIndex({ id: 1 }, { unique: true })
 
-// --- Admin auto-bootstrap (ENV-ist) ---
+// --- Admin bootstrap ---
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
 if (ADMIN_EMAIL && ADMIN_PASSWORD) {
   const existing = await Users.findOne({ email: ADMIN_EMAIL })
   const password_hash = bcrypt.hashSync(ADMIN_PASSWORD, 10)
   if (!existing) {
-    await Users.insertOne({
-      id: crypto.randomUUID(),
-      email: ADMIN_EMAIL,
-      role: 'admin',
-      password_hash,
-    })
+    await Users.insertOne({ id: crypto.randomUUID(), email: ADMIN_EMAIL, role: 'admin', password_hash })
     console.log('Bootstrap: loodud admin kasutaja ->', ADMIN_EMAIL)
   } else if (!bcrypt.compareSync(ADMIN_PASSWORD, existing.password_hash)) {
     await Users.updateOne({ _id: existing._id }, { $set: { password_hash } })
@@ -90,40 +89,26 @@ app.post('/auth/login', async (req,res) => {
 })
 
 // --- Schema ---
-app.get('/api/schema', async (req,res) => {
+app.get('/api/schema', async (_req,res) => {
   const deps = await Departments.find({}).sort({ name: 1 }).toArray()
   const qs   = await Questions.find({}).toArray()
-  const byDep = new Map()
-  for (const d of deps) byDep.set(d.id, [])
+  const byDep = new Map(deps.map(d => [d.id, []]))
   for (const q of qs) {
     const list = byDep.get(q.department_id)
     if (list) list.push({
-      id: q.id,
-      text: q.text,
-      clause: q.clause || undefined,
-      stds: q.stds || [],
-      guidance: q.guidance || undefined,
-      tags: q.tags || []
+      id: q.id, text: q.text, clause: q.clause || undefined, stds: q.stds || [], guidance: q.guidance || undefined, tags: q.tags || []
     })
   }
-  const schema = {
-    meta: { version: 'glx-gpe-mongo', org: '(server)' },
-    departments: deps.map(d => ({ id: d.id, name: d.name, questions: byDep.get(d.id) || [] }))
-  }
-  res.json(schema)
+  res.json({ meta: { version: 'glx-gpe-mongo', org: '(server)' },
+             departments: deps.map(d => ({ id: d.id, name: d.name, questions: byDep.get(d.id) || [] })) })
 })
 
 // --- Departments CRUD ---
 app.post('/api/departments', authRequired, requireRole('admin'), async (req,res) => {
   const { id, name } = req.body || {}
   if (!id || !name) return res.status(400).json({ error: 'id and name required' })
-  try {
-    await Departments.insertOne({ id, name })
-    res.json({ ok: true })
-  } catch (e) {
-    if (String(e).includes('E11000')) return res.status(400).json({ error: 'id exists' })
-    throw e
-  }
+  try { await Departments.insertOne({ id, name }); res.json({ ok: true }) }
+  catch (e) { if (String(e).includes('E11000')) return res.status(400).json({ error: 'id exists' }); throw e }
 })
 app.put('/api/departments/:id', authRequired, requireRole('admin'), async (req,res) => {
   const r = await Departments.updateOne({ id: req.params.id }, { $set: { name: req.body.name } })
@@ -166,15 +151,14 @@ app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req,res
   if (!r.matchedCount) return res.status(404).json({ error: 'not found' })
   res.json({ ok: true })
 })
-app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
-  await Questions.deleteOne({ id: req.params.id })
+app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (_req,res) => {
+  await Questions.deleteOne({ id: _req.params.id })
   res.json({ ok: true })
 })
 
 // --- Audits ---
 app.post('/api/audits', authRequired, requireRole(['admin','auditor']), async (req,res) => {
   const { department_id, standards, answers } = req.body || {}
-  // loo lihtne kasvav id Mongo sees
   const last = await Audits.find({}).sort({ id: -1 }).limit(1).toArray()
   const id = (last[0]?.id || 0) + 1
   await Audits.insertOne({ id, department_id, standards: standards || [], created_at: new Date().toISOString() })
@@ -192,12 +176,30 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
   res.json({ audit: a, answers: ans })
 })
 
-// --- Static client ---
-app.use(express.static(path.join(__dirname, 'public')))
-app.get(/^(?!\/api).*/, (req,res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'))
-})
+// --- Version endpoint (kontrollime, et õige build jookseb) ---
+app.get('/__version', (_req, res) => res.json({ version: APP_VERSION }))
 
-app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (Mongo) http://localhost:${PORT}`))
+// --- Static client: server/public või fallback client/dist ---
+const SERVER_PUBLIC = path.join(__dirname, 'public')
+const CLIENT_DIST   = path.resolve(__dirname, '../client/dist')
 
+let STATIC_ROOT = null
+if (fs.existsSync(path.join(SERVER_PUBLIC, 'index.html'))) {
+  STATIC_ROOT = SERVER_PUBLIC
+  console.log('Frontend: serving from server/public')
+} else if (fs.existsSync(path.join(CLIENT_DIST, 'index.html'))) {
+  STATIC_ROOT = CLIENT_DIST
+  console.log('Frontend: serving from client/dist (fallback)')
+} else {
+  console.warn('Frontend: no build found (neither server/public nor client/dist)')
+}
+
+if (STATIC_ROOT) {
+  app.use(express.static(STATIC_ROOT))
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(STATIC_ROOT, 'index.html'))
+  })
+}
+
+app.listen(PORT, () => console.log(`Glamox Auditor (Mongo) ${APP_VERSION} http://localhost:${PORT}`))
 

@@ -1,26 +1,21 @@
 {
-    "name": "glamox-gpe-siseaudit-server",
-    "private": true,
-    "version": "1.0.0",
-    "type": "module",
-    "main": "index.js",
-    "scripts": {
-        "dev": "node index.js",
-        "start": "node index.js",
-        "seed": "node seed.js"
-    },
-    "dependencies": {
-        "bcryptjs": "^2.4.3",
-        "cors": "^2.8.5",
-        "dotenv": "^16.6.1",
-        "express": "^4.19.2",
-        "express-rate-limit": "^7.4.0",
-        "helmet": "^7.1.0",
-        "jsonwebtoken": "^9.0.2",
-        "lowdb": "^6.0.1",
-        "mongodb": "^6.19.0"
-    },
-    "engines": {
-        "node": "20.x"
-    }
+  "name": "glamox-auditor-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "type": "module",
+  "engines": { "node": "20.x" },
+  "scripts": {
+    "start": "node index.js",
+    "postinstall": "node -e \"console.log('» Building client via postinstall');\" && cd ..\\client && npm ci && npm run build && node -e \"console.log('» Copying dist -> server/public');\" && mkdir -p ..\\server\\public && xcopy /E /I /Y dist ..\\server\\public > NUL 2>&1 || cp -r dist/* ../server/public"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.10.0",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "lowdb": "^6.0.1"
+  }
 }
