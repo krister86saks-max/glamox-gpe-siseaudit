@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { nanoid } from 'nanoid';
 import type {
   SupplierAudit, SupplierAuditPoint, SubQuestion, QuestionType,
@@ -22,6 +22,11 @@ export default function SupplierAuditPage({ token, role }: Props) {
   // Pildid – hoiame pildid per-punkt (point.id -> dataURL[])
   const [images, setImages] = useState<Record<string, string[]>>({});
 
+  // Väikesed laadimise lukud admin-toimingutele
+  const [busyRename, setBusyRename] = useState(false);
+  const [busyOverwrite, setBusyOverwrite] = useState(false);
+  const [busyDelete, setBusyDelete] = useState(false);
+
   // Init – tühi mustand
   useEffect(() => {
     const draft: SupplierAudit = {
@@ -38,7 +43,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
   // Lae mallid serverist
   useEffect(() => {
     fetch('/api/supplier-audit-templates')
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject(r))
       .then((list: SupplierAuditTemplate[]) => setTemplates(list))
       .catch(() => setTemplates([]));
   }, []);
@@ -55,15 +60,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
           id: nanoid(),
           text: s.text,
           type: s.type,
-          options: s.options ? s.options.map(o => ({ id: nanoid(), label: o.label })) : undefined,
+          options: s.options ? s.options.map(o => ({ id: nanoid(), label: (o as any).label ?? String(o) })) : undefined,
           answerText: undefined,
           answerOptions: undefined
         }))
       };
     }
     setAudit(a => a ? { ...a, points: tpl.points.map(clonePoint) } : a);
-    // puhasta pildid (uued id-d)
-    setImages({});
+    setImages({}); // puhasta pildid (uued id-d)
   }
 
   // --- CRUD punktidele ---
@@ -146,33 +150,36 @@ export default function SupplierAuditPage({ token, role }: Props) {
         id: p.id,
         code: p.code,
         title: p.title,
-        comment: '', // malli tasemel tühjendame
+        comment: '',
         subQuestions: p.subQuestions.map(s => ({
           id: s.id,
           text: s.text,
           type: s.type,
-          options: s.options?.map(o => ({ id: o.id, label: o.label }))
+          options: s.options?.map(o => ({ id: (o as any).id ?? nanoid(), label: (o as any).label ?? String(o) }))
         }))
       }))
     };
 
-    const r = await fetch('/api/supplier-audit-templates', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText));
-      return;
+    try {
+      const r = await fetch('/api/supplier-audit-templates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error(txt || r.statusText);
+      }
+      const tpl: SupplierAuditTemplate = await r.json();
+      setTemplates(prev => [...prev, tpl]);
+      setTplId(tpl.id);
+      alert('Mall salvestatud.');
+    } catch (err: any) {
+      alert('Malli salvestus ebaõnnestus: ' + (err?.message ?? err));
     }
-    const tpl: SupplierAuditTemplate = await r.json();
-    setTemplates(prev => [...prev, tpl]);
-    setTplId(tpl.id);
-    alert('Mall salvestatud.');
   }
 
   // --- Admin: muuda nime ---
@@ -180,20 +187,24 @@ export default function SupplierAuditPage({ token, role }: Props) {
     if (role !== 'admin' || !token || !tplId) return;
     const current = templates.find(t => t.id === tplId);
     const name = window.prompt('Uus auditi liigi nimi', current?.name || '');
-    if (!name) return;
-    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({ name })
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      alert('Nime muutmine ebaõnnestus: ' + (j.error || r.statusText));
-      return;
+    if (!name || !name.trim()) return;
+
+    setBusyRename(true);
+    try {
+      const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ name: name.trim() })
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const updated: SupplierAuditTemplate = await r.json();
+      setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
+      alert('Nimi muudetud.');
+    } catch (err: any) {
+      alert('Nime muutmine ebaõnnestus: ' + (err?.message ?? err));
+    } finally {
+      setBusyRename(false);
     }
-    const updated: SupplierAuditTemplate = await r.json();
-    setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
-    alert('Nimi muudetud.');
   }
 
   // --- Admin: kirjuta üle valitud liik praeguse küsimustikuga ---
@@ -214,24 +225,27 @@ export default function SupplierAuditPage({ token, role }: Props) {
           id: s.id,
           text: s.text,
           type: s.type,
-          options: s.options?.map(o => ({ id: o.id, label: o.label }))
+          options: s.options?.map(o => ({ id: (o as any).id ?? nanoid(), label: (o as any).label ?? String(o) }))
         }))
       }))
     };
 
-    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify(payload)
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      alert('Üle kirjutamine ebaõnnestus: ' + (j.error || r.statusText));
-      return;
+    setBusyOverwrite(true);
+    try {
+      const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const updated: SupplierAuditTemplate = await r.json();
+      setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
+      alert('Küsimustik kirjutati üle.');
+    } catch (err: any) {
+      alert('Üle kirjutamine ebaõnnestus: ' + (err?.message ?? err));
+    } finally {
+      setBusyOverwrite(false);
     }
-    const updated: SupplierAuditTemplate = await r.json();
-    setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
-    alert('Küsimustik kirjutati üle.');
   }
 
   // --- Admin: kustuta liik ---
@@ -241,18 +255,21 @@ export default function SupplierAuditPage({ token, role }: Props) {
     if (!current) return;
     if (!confirm(`Kustuta auditi liik "${current.name}"?`)) return;
 
-    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
-      method: 'DELETE',
-      headers: { Authorization: 'Bearer ' + token }
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      alert('Kustutamine ebaõnnestus: ' + (j.error || r.statusText));
-      return;
+    setBusyDelete(true);
+    try {
+      const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setTemplates(prev => prev.filter(t => t.id !== tplId));
+      setTplId('');
+      alert('Auditi liik kustutatud.');
+    } catch (err: any) {
+      alert('Kustutamine ebaõnnestus: ' + (err?.message ?? err));
+    } finally {
+      setBusyDelete(false);
     }
-    setTemplates(prev => prev.filter(t => t.id !== tplId));
-    setTplId('');
-    alert('Auditi liik kustutatud.');
   }
 
   // --- Pooliku auditi alla-/üleslaadimine ---
@@ -303,41 +320,70 @@ export default function SupplierAuditPage({ token, role }: Props) {
       </div>
 
       {/* Mallid / auditi liigid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-        <div className="flex gap-2">
-          <select className="border p-2 rounded" value={tplId} onChange={e=>setTplId(e.target.value)}>
+      <div className="space-y-2">
+        {/* Rida 1: valik + Ava küsimustik */}
+        <div className="flex flex-col md:flex-row md:items-center gap-2">
+          <select
+            className="border p-2 rounded md:min-w-[280px]"
+            value={tplId}
+            onChange={e=>setTplId(e.target.value)}
+          >
             <option value="">— Vali auditi liik —</option>
             {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
 
-          {role === 'admin' && tplId && (
-            <>
-              <button className="border p-2 rounded" onClick={renameTemplate}>Muuda nime</button>
-              <button className="border p-2 rounded" onClick={overwriteTemplateFromCurrent}>
-                Kirjuta üle selle küsimustikuga
-              </button>
-              <button className="border p-2 rounded" onClick={deleteTemplate}>Kustuta liik</button>
-            </>
-          )}
+          <button
+            className="border p-2 rounded md:ml-2"
+            disabled={!tplId}
+            onClick={()=>{
+              const tpl = templates.find(t=>t.id===tplId);
+              if (tpl) applyTemplate(tpl);
+            }}>
+            Ava küsimustik
+          </button>
+
+          <button className="border p-2 rounded md:ml-auto" onClick={handlePrint}>Salvesta PDF</button>
         </div>
 
-        <button
-          className="border p-2 rounded"
-          disabled={!tplId}
-          onClick={()=>{
-            const tpl = templates.find(t=>t.id===tplId);
-            if (tpl) applyTemplate(tpl);
-          }}>
-          Ava küsimustik
-        </button>
-
+        {/* Rida 2 (admin): nupud, mis mähkuvad — ei kattu valikuga */}
         {role === 'admin' && (
-          <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
-            Salvesta mallina
-          </button>
-        )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="border p-2 rounded"
+              disabled={!tplId || busyRename}
+              onClick={renameTemplate}
+              title="Muuda valitud auditi liigi nime"
+            >
+              {busyRename ? 'Muutan…' : 'Muuda nime'}
+            </button>
 
-        <button className="border p-2 rounded" onClick={handlePrint}>Salvesta PDF</button>
+            <button
+              className="border p-2 rounded"
+              disabled={!tplId || busyOverwrite}
+              onClick={overwriteTemplateFromCurrent}
+              title="Kirjuta valitud liik üle praeguse küsimustikuga"
+            >
+              {busyOverwrite ? 'Kirjutan üle…' : 'Kirjuta üle selle küsimustikuga'}
+            </button>
+
+            <button
+              className="border p-2 rounded"
+              disabled={!tplId || busyDelete}
+              onClick={deleteTemplate}
+              title="Kustuta valitud auditi liik"
+            >
+              {busyDelete ? 'Kustutan…' : 'Kustuta liik'}
+            </button>
+
+            <button
+              className="border p-2 rounded bg-black text-white ml-auto"
+              onClick={saveAsTemplate}
+              title="Salvesta hetkel avatud küsimustik uue mallina"
+            >
+              Salvesta mallina
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Punktid */}
@@ -420,20 +466,20 @@ export default function SupplierAuditPage({ token, role }: Props) {
 function MultiOptionsEditor({ sub, onChange }: { sub: SubQuestion; onChange: (p: Partial<SubQuestion>) => void; }) {
   const opts = sub.options ?? [];
   const addOpt = () => onChange({ options: [...opts, { id: nanoid(), label: 'Uus valik' }] });
-  const setLabel = (id: string, label: string) => onChange({ options: (sub.options ?? []).map(o => o.id === id ? { ...o, label } : o) });
+  const setLabel = (id: string, label: string) => onChange({ options: (sub.options ?? []).map(o => (o as any).id === id ? { ...(o as any), label } : o) });
   const toggle = (id: string) => {
     const chosen = new Set(sub.answerOptions ?? []);
     chosen.has(id) ? chosen.delete(id) : chosen.add(id);
     onChange({ answerOptions: Array.from(chosen) });
   };
-  const remove = (id: string) => onChange({ options: (sub.options ?? []).filter(o => o.id !== id) });
+  const remove = (id: string) => onChange({ options: (sub.options ?? []).filter(o => (o as any).id !== id) });
 
   return (
     <div className="mt-2 space-y-2">
-      {(sub.options ?? []).map(o => (
-        <div key={o.id} className="flex items-center gap-2">
+      {(sub.options ?? []).map((o: any) => (
+        <div key={o.id ?? String(o)} className="flex items-center gap-2">
           <input type="checkbox" checked={(sub.answerOptions ?? []).includes(o.id)} onChange={() => toggle(o.id)} />
-          <input className="border p-1 rounded flex-1" value={o.label} onChange={e=>setLabel(o.id, e.target.value)} />
+          <input className="border p-1 rounded flex-1" value={o.label ?? String(o)} onChange={e=>setLabel(o.id, e.target.value)} />
           <button className="px-2 py-1 border rounded" onClick={() => remove(o.id)}>×</button>
         </div>
       ))}
