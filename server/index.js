@@ -1,4 +1,4 @@
-// server/index.js  — LowDB (JSON) variant, Mongo't pole vaja
+// server/index.js — LowDB + ESM (Renderile valmis)
 import express from 'express'
 import cors from 'cors'
 import jwt from 'jsonwebtoken'
@@ -13,6 +13,7 @@ import crypto from 'crypto'
 // LowDB
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -24,18 +25,20 @@ const db = new Low(adapter, {
   questions: [],
   audits: [],
   answers: [],
-  supplier_audit_templates: []
+  supplier_audit_templates: [] // hoidla tarnijamallidele
 })
 await db.read()
-if (!db.data) db.data = {
-  users: [],
-  departments: [],
-  questions: [],
-  audits: [],
-  answers: [],
-  supplier_audit_templates: []
+if (!db.data) {
+  db.data = {
+    users: [],
+    departments: [],
+    questions: [],
+    audits: [],
+    answers: [],
+    supplier_audit_templates: []
+  }
+  await db.write()
 }
-await db.write()
 
 const app = express()
 app.use(express.json())
@@ -66,51 +69,54 @@ function authRequired(req, res, next) {
   const auth = req.headers.authorization || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
   if (!token) return res.status(401).json({ error: 'missing token' })
-  try { req.user = jwt.verify(token, JWT_SECRET); next() } catch { res.status(401).json({ error: 'invalid token' }) }
+  try {
+    req.user = jwt.verify(token, JWT_SECRET)
+    next()
+  } catch {
+    res.status(401).json({ error: 'invalid token' })
+  }
 }
 function requireRole(role) {
+  const allow = Array.isArray(role) ? role : [role]
   return (req, res, next) => {
-    const roles = Array.isArray(role) ? role : [role]
-    if (!req.user || !roles.includes(req.user.role)) return res.status(403).json({ error: 'forbidden' })
+    if (!req.user || !allow.includes(req.user.role)) return res.status(403).json({ error: 'forbidden' })
     next()
   }
 }
 
-// --- login ---
-app.post('/auth/login', async (req,res) => {
+// --- AUTH ---
+app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body || {}
   const user = db.data.users.find(u => u.email === email)
   if (!user) return res.status(401).json({ error: 'invalid credentials' })
   if (!bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'invalid credentials' })
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '6h' })
+  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' })
   res.json({ token, role: user.role, email: user.email })
 })
 
-// --- schema (departments + questions) ---
-app.get('/api/schema', async (_req,res) => {
-  const deps = [...db.data.departments].sort((a,b) => a.name.localeCompare(b.name))
-  const qs   = db.data.questions
-  const byDep = new Map()
-  for (const d of deps) byDep.set(d.id, [])
+// --- SCHEMA (departments + questions) ---
+app.get('/api/schema', async (_req, res) => {
+  const deps = [...db.data.departments].sort((a, b) => a.name.localeCompare(b.name))
+  const qs = db.data.questions
+  const byDep = new Map(deps.map(d => [d.id, []]))
   for (const q of qs) {
-    const list = byDep.get(q.department_id)
-    if (list) list.push({
+    const arr = byDep.get(q.department_id)
+    if (arr) arr.push({
       id: q.id,
       text: q.text,
-      clause: q.clause || undefined,
+      clause: q.clause || '',
       stds: q.stds || [],
-      guidance: q.guidance || undefined,
-      tags: q.tags || []
+      guidance: q.guidance || ''
     })
   }
   res.json({
-    meta: { version: 'glx-gpe-lowdb', org: '(server)' },
+    meta: { version: 'lowdb', org: 'Glamox' },
     departments: deps.map(d => ({ id: d.id, name: d.name, questions: byDep.get(d.id) || [] }))
   })
 })
 
 // --- Departments CRUD ---
-app.post('/api/departments', authRequired, requireRole('admin'), async (req,res) => {
+app.post('/api/departments', authRequired, requireRole('admin'), async (req, res) => {
   const { id, name } = req.body || {}
   if (!id || !name) return res.status(400).json({ error: 'id and name required' })
   if (db.data.departments.find(d => d.id === id)) return res.status(400).json({ error: 'id exists' })
@@ -118,87 +124,97 @@ app.post('/api/departments', authRequired, requireRole('admin'), async (req,res)
   await db.write()
   res.json({ ok: true })
 })
-app.put('/api/departments/:id', authRequired, requireRole('admin'), async (req,res) => {
+app.put('/api/departments/:id', authRequired, requireRole('admin'), async (req, res) => {
   const d = db.data.departments.find(x => x.id === req.params.id)
   if (!d) return res.status(404).json({ error: 'not found' })
   d.name = req.body.name ?? d.name
   await db.write()
   res.json({ ok: true })
 })
-app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (req,res) => {
-  db.data.questions = db.data.questions.filter(q => q.department_id !== req.params.id)
-  db.data.departments = db.data.departments.filter(d => d.id !== req.params.id)
+app.delete('/api/departments/:id', authRequired, requireRole('admin'), async (req, res) => {
+  const depId = req.params.id
+  db.data.questions = db.data.questions.filter(q => q.department_id !== depId)
+  db.data.departments = db.data.departments.filter(d => d.id !== depId)
   await db.write()
   res.json({ ok: true })
 })
 
 // --- Questions CRUD ---
-app.post('/api/questions', authRequired, requireRole('admin'), async (req,res) => {
-  const { id, department_id, text, clause, stds, guidance, tags } = req.body || {}
-  if (!id || !department_id || !text || !stds) return res.status(400).json({ error: 'id, department_id, text, stds required' })
+app.post('/api/questions', authRequired, requireRole('admin'), async (req, res) => {
+  const { id, department_id, text, clause, stds, guidance } = req.body || {}
+  if (!id || !department_id || !text) return res.status(400).json({ error: 'id, department_id, text required' })
   if (db.data.questions.find(q => q.id === id)) return res.status(400).json({ error: 'id exists' })
   db.data.questions.push({
     id, department_id, text,
-    clause: clause || null,
-    stds: Array.isArray(stds) ? stds : String(stds).split(' ').filter(Boolean),
-    guidance: guidance || null,
-    tags: tags || []
+    clause: clause || '',
+    stds: Array.isArray(stds) ? stds : String(stds || '').split(/[ ,;]+/).filter(Boolean),
+    guidance: guidance || ''
   })
   await db.write()
   res.json({ ok: true })
 })
-app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
+app.put('/api/questions/:id', authRequired, requireRole('admin'), async (req, res) => {
   const q = db.data.questions.find(x => x.id === req.params.id)
   if (!q) return res.status(404).json({ error: 'not found' })
   if (req.body.text !== undefined) q.text = req.body.text
   if (req.body.clause !== undefined) q.clause = req.body.clause
-  if (req.body.stds  !== undefined) q.stds  = Array.isArray(req.body.stds) ? req.body.stds : String(req.body.stds).split(' ').filter(Boolean)
+  if (req.body.stds !== undefined) q.stds = Array.isArray(req.body.stds) ? req.body.stds : String(req.body.stds || '').split(/[ ,;]+/).filter(Boolean)
   if (req.body.guidance !== undefined) q.guidance = req.body.guidance
   if (req.body.department_id !== undefined) q.department_id = req.body.department_id
   await db.write()
   res.json({ ok: true })
 })
-app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req,res) => {
+app.delete('/api/questions/:id', authRequired, requireRole('admin'), async (req, res) => {
   db.data.questions = db.data.questions.filter(q => q.id !== req.params.id)
   await db.write()
   res.json({ ok: true })
 })
 
-// --- Supplier Audit Templates (MALLID) ---
-app.get('/api/supplier-audit-templates', async (_req, res) => {
-  const list = [...db.data.supplier_audit_templates].sort((a,b)=>a.name.localeCompare(b.name))
-  res.json(list)
-})
-app.post('/api/supplier-audit-templates', authRequired, requireRole('admin'), async (req, res) => {
-  const body = req.body || {}
-  const doc = { id: crypto.randomUUID(), name: String(body.name || 'New template'), points: Array.isArray(body.points) ? body.points : [] }
-  db.data.supplier_audit_templates.push(doc)
-  await db.write()
-  res.status(201).json(doc)
-})
-app.get('/api/supplier-audit-templates/:id', async (req, res) => {
-  const t = db.data.supplier_audit_templates.find(x => x.id === req.params.id)
-  if (!t) return res.status(404).json({ error: 'not found' })
-  res.json(t)
-})
-app.put('/api/supplier-audit-templates/:id', authRequired, requireRole('admin'), async (req, res) => {
-  const t = db.data.supplier_audit_templates.find(x => x.id === req.params.id)
-  if (!t) return res.status(404).json({ error: 'not found' })
-  if (req.body.name !== undefined) t.name = String(req.body.name)
-  if (req.body.points !== undefined) t.points = Array.isArray(req.body.points) ? req.body.points : []
-  await db.write()
-  res.json(t)
-})
-app.delete('/api/supplier-audit-templates/:id', authRequired, requireRole('admin'), async (req, res) => {
-  db.data.supplier_audit_templates = db.data.supplier_audit_templates.filter(x => x.id !== req.params.id)
-  await db.write()
-  res.json({ ok: true })
-})
+// --- Supplier Audit Templates (toetame mõlemat rada) ---
+const listTemplates = () => [...db.data.supplier_audit_templates].sort((a, b) => a.name.localeCompare(b.name))
+const getTpl = id => db.data.supplier_audit_templates.find(x => x.id === id)
 
-// --- serveeri klient (builditud) ---
+function supplierRoutes(prefix) {
+  app.get(`${prefix}`, async (_req, res) => {
+    res.json(listTemplates())
+  })
+  app.post(`${prefix}`, authRequired, requireRole('admin'), async (req, res) => {
+    const { name, points } = req.body || {}
+    const doc = { id: crypto.randomUUID(), name: String(name || 'Uus audit'), points: Array.isArray(points) ? points : [] }
+    db.data.supplier_audit_templates.push(doc)
+    await db.write()
+    res.status(201).json(doc)
+  })
+  app.get(`${prefix}/:id`, async (req, res) => {
+    const t = getTpl(req.params.id)
+    if (!t) return res.status(404).json({ error: 'not found' })
+    res.json(t)
+  })
+  app.put(`${prefix}/:id`, authRequired, requireRole('admin'), async (req, res) => {
+    const t = getTpl(req.params.id)
+    if (!t) return res.status(404).json({ error: 'not found' })
+    if (req.body.name !== undefined) t.name = String(req.body.name)
+    if (req.body.points !== undefined) t.points = Array.isArray(req.body.points) ? req.body.points : []
+    await db.write()
+    res.json(t)
+  })
+  app.delete(`${prefix}/:id`, authRequired, requireRole('admin'), async (req, res) => {
+    db.data.supplier_audit_templates = db.data.supplier_audit_templates.filter(x => x.id !== req.params.id)
+    await db.write()
+    res.json({ ok: true })
+  })
+}
+
+// toetame nii /api/supplier/templates kui ka /api/supplier-audit-templates
+supplierRoutes('/api/supplier/templates')
+supplierRoutes('/api/supplier-audit-templates')
+
+// --- serveeri builditud klient ---
 app.use(express.static(path.join(__dirname, 'public')))
-app.get(/^(?!\/api).*/, (_req,res) => {
+app.get(/^(?!\/api).*/, (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 
-app.listen(PORT, () => console.log(`Glamox GPE Siseaudit (LowDB) http://localhost:${PORT}`))
+app.listen(PORT, () => {
+  console.log(`Glamox Auditor (LowDB) http://localhost:${PORT}`)
+})

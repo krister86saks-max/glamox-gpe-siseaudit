@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: glamox-auditor
+    env: node
+    plan: free
+    buildCommand: |
+      set -e
+      echo "» Building client"
+      cd client
+      npm ci
+      npm run build
+      echo "» Copy dist -> server/public"
+      mkdir -p ../server/public
+      cp -r dist/* ../server/public
+      echo "» Install server deps"
+      cd ../server
+      npm ci --omit=dev
+      echo "» Build done"
+      ls -la public | head -n 50
+    startCommand: node server/index.js
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: admin@example.com
+      - key: ADMIN_PASSWORD
+        value: Admin123!
