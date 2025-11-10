@@ -1,0 +1,15 @@
+{
+  "users": [
+    {
+      "id": "73c5f9b9-a47a-4a72-af97-eeb2399631f8",
+      "email": "admin@example.com",
+      "role": "admin",
+      "password_hash": "$2a$10$pILHrNqtAPdPRciy2vbkheje8yi3eifrN34GR2d4yngdrcOAVTBVu"
+    }
+  ],
+  "departments": [],
+  "questions": [],
+  "audits": [],
+  "answers": [],
+  "supplier_audit_templates": []
+}

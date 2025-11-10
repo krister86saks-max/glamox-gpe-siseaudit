@@ -17,8 +17,9 @@
         "express-rate-limit": "^7.4.0",
         "helmet": "^7.1.0",
         "jsonwebtoken": "^9.0.2",
-        "lowdb": "^6.0.1",
-        "mongodb": "^6.19.0"
+        "lowdb": "^6.1.1",
+        "mongodb": "^6.19.0",
+        "nanoid": "^5.1.6"
     },
     "engines": {
         "node": "20.x"
