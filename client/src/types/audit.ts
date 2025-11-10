@@ -4,7 +4,7 @@
 //  - QuestionType sisaldab 'open'
 //  - SubQuestion omab options/answerOptions/answerText (võivad olla stringid või objektid)
 //  - SupplierAuditPoint omab subQuestions, code, comment
-//  - SupplierAudit omab supplierName, auditor, date (KOHUSTUSLIK), status (valikuline)
+//  - SupplierAudit omab supplierName, auditor, date (KOHUSTUSLIK), status (valikuline), name (valikuline)
 //  - Ekspordime: SupplierAudit, SupplierAuditTemplate, SubQuestion
 
 export type QuestionType = 'open' | 'single' | 'multi';
@@ -32,11 +32,11 @@ export interface SupplierAuditPoint {
 
 export interface SupplierAudit {
   id: string;
-  name: string;
-  supplierName?: string;        // komponendis kasutatakse
-  auditor?: string;             // komponendis kasutatakse
-  date: string;                 // KOHUSTUSLIK (eemaldasime ?), et vältida TS18048
-  status?: string;              // kui algses objektis on 'status'
+  name?: string;                // <-- muudetud valikuliseks
+  supplierName?: string;
+  auditor?: string;
+  date: string;                 // kohustuslik
+  status?: string;
   points: SupplierAuditPoint[];
 }
 
