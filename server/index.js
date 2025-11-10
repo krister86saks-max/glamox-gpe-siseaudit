@@ -1,4 +1,4 @@
-// server/index.js  — Mongo + fallback static (public || client/dist) + version endpoint
+// server/index.js — Mongo + Supplier Templates CRUD + fallback static + version
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
@@ -12,12 +12,12 @@ import fs from 'fs'
 import crypto from 'crypto'
 import { MongoClient } from 'mongodb'
 
-// >>>——— VERSION TAG (muuda vajadusel) ———>>>
-const APP_VERSION = 'v-2025-11-10-21:39'  // ← see peab logis ja /__version peal näha olema
-// <<<——— VERSION TAG ———<<<
+// --- VERSION TAG (näidatakse logis ja /__version vastuses)
+const APP_VERSION = 'v-2025-11-10-supplier-templates'
 
 const app = express()
-app.use(express.json())
+// NB: mallid võivad olla suured -> tõstame limiiti
+app.use(express.json({ limit: '2mb' }))
 app.use(helmet())
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }))
 app.use(cors())
@@ -42,11 +42,16 @@ const Departments = db.collection('departments')
 const Questions   = db.collection('questions')
 const Audits      = db.collection('audits')
 const Answers     = db.collection('answers')
+// UUS: tarnijaauditi mallid
+const SupplierTemplates = db.collection('supplier_audit_templates')
 
 await Users.createIndex({ email: 1 }, { unique: true })
 await Departments.createIndex({ id: 1 }, { unique: true })
 await Questions.createIndex({ id: 1 }, { unique: true })
 await Audits.createIndex({ id: 1 }, { unique: true })
+// UUS: indeksid mallidele
+await SupplierTemplates.createIndex({ id: 1 }, { unique: true })
+await SupplierTemplates.createIndex({ name: 1 })
 
 // --- Admin bootstrap ---
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL
@@ -176,7 +181,62 @@ app.get('/api/audits/:id', authRequired, requireRole(['admin','auditor','externa
   res.json({ audit: a, answers: ans })
 })
 
-// --- Version endpoint (kontrollime, et õige build jookseb) ---
+/* ===========================  Supplier Audit Templates  =========================== */
+/* Toetame mõlemat path'i: /api/supplier/templates ja /api/supplier-audit-templates  */
+
+function supplierTemplateRoutes(prefix) {
+  // GET list
+  app.get(`${prefix}`, async (_req, res) => {
+    const list = await SupplierTemplates.find({}).project({ _id: 0 }).sort({ name: 1 }).toArray()
+    res.json(list.map(t => ({ id: t.id, name: t.name, points: t.points || [] })))
+  })
+
+  // POST create (admin)
+  app.post(`${prefix}`, authRequired, requireRole('admin'), async (req, res) => {
+    const { name, points } = req.body || {}
+    const doc = {
+      id: crypto.randomUUID(),
+      name: String(name || 'Uus mall'),
+      points: Array.isArray(points) ? points : []
+    }
+    await SupplierTemplates.insertOne(doc)
+    res.status(201).json({ id: doc.id, name: doc.name, points: doc.points })
+  })
+
+  // GET one
+  app.get(`${prefix}/:id`, async (req, res) => {
+    const t = await SupplierTemplates.findOne({ id: req.params.id })
+    if (!t) return res.status(404).json({ error: 'not found' })
+    res.json({ id: t.id, name: t.name, points: t.points || [] })
+  })
+
+  // PUT update (admin)
+  app.put(`${prefix}/:id`, authRequired, requireRole('admin'), async (req, res) => {
+    const patch = {}
+    if (req.body.name !== undefined)   patch.name = String(req.body.name)
+    if (req.body.points !== undefined) patch.points = Array.isArray(req.body.points) ? req.body.points : []
+    const r = await SupplierTemplates.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: patch },
+      { returnDocument: 'after' }
+    )
+    if (!r.value) return res.status(404).json({ error: 'not found' })
+    const t = r.value
+    res.json({ id: t.id, name: t.name, points: t.points || [] })
+  })
+
+  // DELETE (admin)
+  app.delete(`${prefix}/:id`, authRequired, requireRole('admin'), async (req, res) => {
+    await SupplierTemplates.deleteOne({ id: req.params.id })
+    res.json({ ok: true })
+  })
+}
+
+supplierTemplateRoutes('/api/supplier/templates')
+supplierTemplateRoutes('/api/supplier-audit-templates')
+/* ================================================================================ */
+
+// --- Version endpoint ---
 app.get('/__version', (_req, res) => res.json({ version: APP_VERSION }))
 
 // --- Static client: server/public või fallback client/dist ---
@@ -202,4 +262,3 @@ if (STATIC_ROOT) {
 }
 
 app.listen(PORT, () => console.log(`Glamox Auditor (Mongo) ${APP_VERSION} http://localhost:${PORT}`))
-
