@@ -1,53 +1,45 @@
 // client/src/types/audit.ts
 
-// NB: SupplierAuditPage.tsx eeldab:
-//  - QuestionType sisaldab 'open'
-//  - SupplierAuditPoint omab 'code', 'subQuestions', 'comment'
-//  - Eksporditakse SupplierAudit, SupplierAuditTemplate, SubQuestion
+// NB: tehtud teadlikult "leebed" tüübid, et SupplierAuditPage.tsx kompileeruks.
+//   - QuestionType sisaldab 'open'
+//   - SubQuestion omab options/answerOptions/answerText (võivad olla stringid või objektid)
+//   - SupplierAuditPoint omab subQuestions, code, comment
+//   - SupplierAudit omab supplierName, auditor, date
+//   - Ekspordime: SupplierAudit, SupplierAuditTemplate, SubQuestion
 
-// Vastusevaliku kirje
-export type ChoiceOption = {
-  id: string;
-  label: string;
-};
-
-// Küsimuse tüüp
 export type QuestionType = 'open' | 'single' | 'multi';
 
-// Alam-küsimus (komponent kasutab seda nime)
+// Võib tulla stringidena või objektidena – lubame mõlemad.
+// Kui komponendis tehakse ...o (spread), jääb 'any' ohutuks.
+export type AnyOption = any;
+
 export interface SubQuestion {
   id: string;
   text: string;
-  type: QuestionType;     // 'open' | 'single' | 'multi'
-  options?: string[];     // single/multi korral valikud
-}
-
-// (Varem defineeritud) alternatiivne küsimuse tüüp – hoian alles, kui kuskil kasutatakse
-export interface SupplierAuditQuestion {
-  id: string;
-  text: string;
   type: QuestionType;
-  options?: string[];
+  options?: AnyOption[];        // nt ['Jah','Ei'] või [{id,label}]
+  answerOptions?: AnyOption[];  // valitud variandid (sama kuju, mida komponent kasutab)
+  answerText?: string;          // 'open' vastus
 }
 
-// Auditi punkt (plokk)
-// Teeme väljad paindlikuks, et SupplierAuditPage.tsx saaks neid kasutada
 export interface SupplierAuditPoint {
   id: string;
-  title: string;                 // ploki pealkiri
-  code?: string;                 // nt kood (komponent seda küsib)
-  subQuestions?: SubQuestion[];  // komponenti järgi
-  questions?: SupplierAuditQuestion[]; // jäetud ühilduvuseks
-  comment?: string;              // komponendis kasutatakse
+  title: string;
+  code?: string;                // komponendis kasutatakse
+  subQuestions: SubQuestion[];  // teeme nõutavaks, et vältida “possibly undefined”
+  comment?: string;             // komponendis kasutatakse
   allowImages?: boolean;
 }
 
-// Kogu audit/“mall”
 export interface SupplierAudit {
   id: string;
   name: string;
+  supplierName?: string;        // komponendis kasutatakse
+  auditor?: string;             // komponendis kasutatakse
+  date?: string;                // komponendis kasutatakse (ISO string)
   points: SupplierAuditPoint[];
 }
 
-// Hoian ka nime "SupplierAuditTemplate", kui komponent seda impordib
+// Hoian malli nime samana, kui kuskil imporditakse
 export type SupplierAuditTemplate = SupplierAudit;
+
