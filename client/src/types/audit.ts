@@ -1,32 +1,33 @@
-export type QuestionType = 'open' | 'multi';
+// client/src/types/audit.ts
 
-export interface SubQuestionOption {
-  id: string;
-  label: string;
+// Valikvastuse element (nt checkboxi/single valiku kirje)
+export type ChoiceOption = {
+  id: string;         // stabiilne ID (nt nanoid)
+  label: string;      // mida näidatakse UI-s
+};
+
+// Küsimuse tüüp: vaba tekst, üksik valik, mitu valikut
+export type QuestionType = 'free' | 'single' | 'multi';
+
+// Ühe auditi punkti sees olev küsimus
+export interface SupplierAuditQuestion {
+  id: string;                 // küsimuse ID
+  text: string;               // küsimuse tekst
+  type: QuestionType;         // 'free' | 'single' | 'multi'
+  options?: string[];         // kui 'single' või 'multi' → valikud (lihttekstina)
 }
 
-export interface SubQuestion {
-  id: string;
-  text: string;
-  type: QuestionType;
-  options?: SubQuestionOption[];
-  answerText?: string;
-  answerOptions?: string[];
-}
-
+// Auditi punkt (plokk), mille all on mitu küsimust + kommentaar
 export interface SupplierAuditPoint {
-  id: string;
-  code?: string;
-  title: string;
-  subQuestions: SubQuestion[];
-  comment?: string;
+  id: string;                         // punkti ID
+  title: string;                      // punkti pealkiri (nt “Ostmine ning kliendirahulolu …”)
+  questions: SupplierAuditQuestion[]; // selle punkti küsimused
+  allowImages?: boolean;              // kas lubatakse pilte lisada (UI-s)
 }
 
-export interface SupplierAudit {
-  id: string;
-  supplierName: string;
-  date: string;
-  auditor: string;
-  points: SupplierAuditPoint[];
-  status?: 'draft' | 'final';
+// Kogu “mall”
+export interface SupplierAuditTemplate {
+  id: string;                         // malli ID
+  name: string;                       // malli nimi (nt “Supplier Plastic moulding”)
+  points: SupplierAuditPoint[];       // mallis sisalduvad punktid
 }
