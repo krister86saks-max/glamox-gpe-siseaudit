@@ -296,7 +296,10 @@ export default function App() {
       `}</style>
 
       <header className="flex items-center gap-3">
-        <img src="/logo.webp" className="h-12" alt="Glamox" />
+        {/* Inline SVG logo – ei vaja faili ja ei tekita katkist pilti */}
+        <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r="20" fill="#E30613" />
+        </svg>
         <h1 className="text-2xl font-bold">GPE Audiitor 2.0</h1>
         <div className="ml-auto flex items-center gap-2 no-print">
           {!token ? (
@@ -757,3 +760,4 @@ function LoginForm({ defaultEmail, defaultPass, onLogin }: { defaultEmail: strin
     </div>
   )
 }
+
