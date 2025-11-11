@@ -1,12 +1,45 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-html, body, #root { height: 100%; }/* --- checkboxid ekraaniks & printimiseks (added) --- */
-.checkbox-line{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin:.25rem 0 .5rem}
-.cb-wrap{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border:1px solid #e5e5e5;border-radius:.375rem;background:#fff}
-.cb-wrap input[type="checkbox"]{width:1rem;height:1rem;accent-color:#000}
-@media print{
-  .cb-wrap{border-color:#000}
-  .cb-wrap input[type="checkbox"]{appearance:none;-webkit-appearance:none;border:1px solid #000;width:14px;height:14px;display:inline-block;position:relative}
-  .cb-wrap input[type="checkbox"]:checked::after{content:"✓";position:absolute;font-weight:700;font-size:14px;line-height:14px;left:1px;top:-1px}
+
+/* === PRINT REEGLID === */
+@media print {
+  /* peidame kõik, millele on lisatud klass 'no-print' */
+  .no-print {
+    display: none !important;
+  }
+
+  /* väldi plokkide poolitamist lehekülje vahetusel */
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* väiksemad marginid prindis */
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* pealkirjad tihedamaks */
+  h1, h2, h3 {
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* tabelid / kaardid */
+  .card {
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+  }
+
+  /* inputite kontuurid välja (kui kuskil on jäänud) */
+  input, textarea, select, button {
+    box-shadow: none !important;
+    outline: none !important;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent !important;
+  }
 }
+
