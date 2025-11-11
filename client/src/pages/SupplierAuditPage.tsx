@@ -1,224 +1,494 @@
 // client/src/pages/SupplierAuditPage.tsx
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
-import { SupplierAudit, SupplierAuditTemplate, SupplierAuditPoint, SubQuestion, SubOption } from '../types/audit';
-import { useAuth } from '../context/AuthContext';
-import { v4 as uuidv4 } from 'uuid';
-import toast from 'react-hot-toast';
+import { nanoid } from 'nanoid';
+import type {
+  SupplierAudit,
+  SupplierAuditPoint,
+  SubQuestion,
+  QuestionType,
+  SupplierAuditTemplate,
+} from '../types/audit';
 
-const SupplierAuditPage: React.FC = () => {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+type Role = 'admin' | 'auditor' | 'external' | null;
 
+interface Props {
+  token: string | null;  // App.tsx annab
+  role: Role;            // App.tsx annab
+}
+
+export default function SupplierAuditPage({ token, role }: Props) {
+  const isAdmin = role === 'admin';
+
+  // Auditi sisu (ilma auditee väljata, et mitte nõuda tüübi muutmist)
   const [audit, setAudit] = useState<SupplierAudit | null>(null);
-  const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
 
+  // “Auditeeritav” hoian lokaalselt; salvestan draft JSONi meta alla
+  const [auditee, setAuditee] = useState<string>('');
+
+  // Mallid
+  const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([]);
+  const [tplId, setTplId] = useState<string>('');
+
+  // Pildid per punkt
+  const [images, setImages] = useState<Record<string, string[]>>({});
+
+  // Esmane mustand
   useEffect(() => {
-    fetchTemplates();
+    const draft: SupplierAudit = {
+      id: nanoid(),
+      supplierName: '',
+      date: new Date().toISOString(),
+      auditor: '',
+      points: [],
+      status: 'draft',
+    };
+    setAudit(draft);
   }, []);
 
-  const fetchTemplates = async () => {
-    try {
-      const res = await axios.get('/api/templates');
-      setTemplates(res.data);
-    } catch (error) {
-      console.error(error);
+  // Lae mallid serverist
+  useEffect(() => {
+    fetch('/api/supplier-audit-templates')
+      .then(r => r.json())
+      .then((list: SupplierAuditTemplate[]) => setTemplates(list))
+      .catch(() => setTemplates([]));
+  }, []);
+
+  // Malli rakendamine: kloonime id-d ja nullime vastused
+  function applyTemplate(tpl: SupplierAuditTemplate) {
+    function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
+      return {
+        id: nanoid(),
+        code: p.code,
+        title: p.title,
+        comment: '',
+        subQuestions: (p.subQuestions || []).map((s): SubQuestion => ({
+          id: nanoid(),
+          text: s.text,
+          type: s.type as QuestionType, // jääb 'open' | 'multi'
+          options: s.options ? s.options.map(o => ({ id: nanoid(), label: o.label })) : undefined,
+          answerText: undefined,
+          answerOptions: undefined,
+        })),
+      };
     }
-  };
+    setAudit(a => a ? { ...a, points: (tpl.points || []).map(clonePoint) } : a);
+    setImages({});
+  }
 
-  const loadTemplate = async () => {
-    if (!selectedTemplateId) return;
-    try {
-      const res = await axios.get(`/api/templates/${selectedTemplateId}`);
-      const template: SupplierAuditTemplate = res.data;
-
-      setAudit({
-        id: uuidv4(),
-        supplierName: '',
-        auditor: '',
-        auditee: '',
-        date: new Date().toISOString().substring(0, 10),
-        points: template.points.map((p: SupplierAuditPoint) => ({
-          ...p,
-          subQuestions: p.subQuestions.map((sq) => ({
-            ...sq,
-            answerText: '',
-            answerOptions: []
-          }))
-        }))
-      });
-
-      toast.success('Küsimustik avatud!');
-    } catch (error) {
-      console.error(error);
-      toast.error('Viga küsimustiku avamisel');
-    }
-  };
-
+  // Punktid CRUD (adminil)
   const addPoint = () => {
-    if (!isAdmin) return toast.error("Punkte saab lisada ainult admin!");
+    if (!audit || !isAdmin) return;
+    const p: SupplierAuditPoint = {
+      id: nanoid(),
+      title: 'Uus punkt',
+      code: '',
+      subQuestions: [],
+      comment: '',
+    };
+    setAudit({ ...audit, points: [...audit.points, p] });
+  };
+
+  const updatePoint = (id: string, patch: Partial<SupplierAuditPoint>) => {
+    if (!audit) return;
+    setAudit({
+      ...audit,
+      points: audit.points.map(p => (p.id === id ? { ...p, ...patch } : p)),
+    });
+  };
+
+  const removePoint = (id: string) => {
+    if (!audit || !isAdmin) return;
+    setAudit({
+      ...audit,
+      points: audit.points.filter(p => p.id !== id),
+    });
+    setImages(prev => {
+      const cp = { ...prev };
+      delete cp[id];
+      return cp;
+    });
+  };
+
+  // Alam-küsimused (adminil)
+  const addSub = (point: SupplierAuditPoint, type: QuestionType) => {
+    if (!isAdmin) return;
+    const sub: SubQuestion = { id: nanoid(), text: 'Uus küsimus', type };
+    updatePoint(point.id, { subQuestions: [...point.subQuestions, sub] });
+  };
+
+  const updateSub = (point: SupplierAuditPoint, id: string, patch: Partial<SubQuestion>) => {
+    const subs = point.subQuestions.map(s => (s.id === id ? { ...s, ...patch } : s));
+    updatePoint(point.id, { subQuestions: subs });
+  };
+
+  const removeSub = (point: SupplierAuditPoint, id: string) => {
+    if (!isAdmin) return;
+    const subs = point.subQuestions.filter(s => s.id !== id);
+    updatePoint(point.id, { subQuestions: subs });
+  };
+
+  // Pildid per punkt
+  function addImages(pointId: string, files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const list = Array.from(files);
+    Promise.all(
+      list.map(
+        f =>
+          new Promise<string>((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(String(r.result));
+            r.onerror = reject;
+            r.readAsDataURL(f);
+          }),
+      ),
+    ).then(urls => {
+      setImages(p => ({ ...p, [pointId]: [...(p[pointId] || []), ...urls] }));
+    });
+  }
+  function removeImage(pointId: string, idx: number) {
+    setImages(p => {
+      const arr = [...(p[pointId] || [])];
+      arr.splice(idx, 1);
+      return { ...p, [pointId]: arr };
+    });
+  }
+
+  // Malli salvestamine (admin)
+  async function saveAsTemplate() {
+    if (!isAdmin || !token) {
+      alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).');
+      return;
+    }
     if (!audit) return;
 
-    const newPoint: SupplierAuditPoint = {
-      id: uuidv4(),
-      title: 'Uus punkt',
-      subQuestions: []
+    const name = window.prompt('Mallile nimi (nt "Supplier – Plastic Moulding")?');
+    if (!name) return;
+
+    const payload = {
+      name,
+      points: audit.points.map(p => ({
+        id: p.id,
+        code: p.code,
+        title: p.title,
+        comment: '',
+        subQuestions: p.subQuestions.map(s => ({
+          id: s.id,
+          text: s.text,
+          type: s.type as QuestionType,
+          options: s.options?.map(o => ({ id: o.id, label: o.label })),
+        })),
+      })),
     };
 
-    setAudit({ ...audit, points: [...audit.points, newPoint] });
-  };
+    const r = await fetch('/api/supplier-audit-templates', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText));
+      return;
+    }
+    const tpl: SupplierAuditTemplate = await r.json();
+    setTemplates(prev => [...prev, tpl]);
+    setTplId(tpl.id);
+    alert('Mall salvestatud.');
+  }
 
-  const deletePoint = (pointId: string) => {
-    if (!isAdmin) return toast.error("Kustutada saab ainult admin!");
+  // Poolik audit: alla/üles
+  function downloadPartial() {
     if (!audit) return;
+    const payload = { audit, images, meta: { auditee } }; // auditee meta all
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `supplier-audit-draft-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  async function openPartial(file: File) {
+    try {
+      const text = await file.text();
+      const j = JSON.parse(text);
+      if (!j || !j.audit) throw new Error('vale fail');
+      setAudit(j.audit as SupplierAudit);
+      setImages(j.images || {});
+      setAuditee(j.meta?.auditee ?? '');
+      alert('Poolik tarnijaaudit laetud.');
+    } catch {
+      alert('Pooliku auditi avamine ebaõnnestus.');
+    }
+  }
 
-    setAudit({ ...audit, points: audit.points.filter((p) => p.id !== pointId) });
-  };
+  function handlePrint() {
+    window.print();
+  }
 
-  const addOpenQuestion = (pointId: string) => {
-    if (!isAdmin) return toast.error("Küsimusi saab lisada ainult admin!");
-
-    if (!audit) return;
-    const updated = audit.points.map((p) =>
-      p.id === pointId
-        ? {
-            ...p,
-            subQuestions: [
-              ...p.subQuestions,
-              {
-                id: uuidv4(),
-                text: 'Uus küsimus',
-                type: 'open',
-                answerText: ''
-              }
-            ]
-          }
-        : p
-    );
-    setAudit({ ...audit, points: updated });
-  };
-
-  const addMultiQuestion = (pointId: string) => {
-    if (!isAdmin) return toast.error("Küsimusi saab lisada ainult admin!");
-
-    if (!audit) return;
-    const updated = audit.points.map((p) =>
-      p.id === pointId
-        ? {
-            ...p,
-            subQuestions: [
-              ...p.subQuestions,
-              {
-                id: uuidv4(),
-                text: 'Valikvastustega küsimus',
-                type: 'multi',
-                options: [
-                  { id: uuidv4(), label: 'Vastus 1' },
-                  { id: uuidv4(), label: 'Vastus 2' }
-                ],
-                answerOptions: []
-              }
-            ]
-          }
-        : p
-    );
-    setAudit({ ...audit, points: updated });
-  };
-
-  const deleteQuestion = (pointId: string, sqId: string) => {
-    if (!isAdmin) return toast.error("Küsimusi saab kustutada ainult admin!");
-    if (!audit) return;
-
-    const updated = audit.points.map((p) =>
-      p.id === pointId
-        ? { ...p, subQuestions: p.subQuestions.filter((sq) => sq.id !== sqId) }
-        : p
-    );
-    setAudit({ ...audit, points: updated });
-  };
+  if (!audit) return null;
 
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-2">GPE Auditor 2.0</h1>
+    <div className="space-y-4">
+      {/* Peaandmed */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+        <input
+          className="border p-2 rounded"
+          placeholder="Tarnija nimi"
+          value={audit.supplierName}
+          onChange={e => setAudit({ ...audit, supplierName: e.target.value })}
+        />
+        <input
+          className="border p-2 rounded"
+          placeholder="Audiitor"
+          value={audit.auditor}
+          onChange={e => setAudit({ ...audit, auditor: e.target.value })}
+        />
+        <input
+          className="border p-2 rounded"
+          placeholder="Auditeeritav"
+          value={auditee}
+          onChange={e => setAuditee(e.target.value)}
+        />
+        <input
+          className="border p-2 rounded"
+          type="date"
+          value={audit.date.slice(0, 10)}
+          onChange={e => setAudit({ ...audit, date: new Date(e.target.value).toISOString() })}
+        />
 
-      {/* Template selection */}
-      <div className="flex gap-2 mb-4">
-        <select
-          className="border p-2 rounded bg-white"
-          value={selectedTemplateId}
-          onChange={(e) => setSelectedTemplateId(e.target.value)}
-        >
+        {/* Poolik audit: alla / üles */}
+        <button className="border p-2 rounded" onClick={downloadPartial}>
+          Lae alla poolik audit
+        </button>
+        <label className="border p-2 rounded text-center cursor-pointer">
+          Ava poolik audit
+          <input
+            type="file"
+            className="hidden"
+            accept="application/json"
+            onChange={e => e.target.files && openPartial(e.target.files[0])}
+          />
+        </label>
+      </div>
+
+      {/* Mallid */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+        <select className="border p-2 rounded" value={tplId} onChange={e => setTplId(e.target.value)}>
           <option value="">— Vali auditi liik —</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
+          {templates.map(t => (
+            <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
 
-        <button className="bg-green-200 px-4 py-2 rounded font-semibold" onClick={loadTemplate}>
+        <button
+          className="border p-2 rounded bg-green-100"
+          disabled={!tplId}
+          onClick={() => {
+            const tpl = templates.find(t => t.id === tplId);
+            if (tpl) applyTemplate(tpl!);
+          }}
+        >
           Ava küsimustik
         </button>
+
+        {isAdmin && (
+          <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
+            Salvesta mallina
+          </button>
+        )}
+        <button className="border p-2 rounded" onClick={handlePrint}>Salvesta PDF</button>
       </div>
 
-      {/* Audit questions */}
-      {audit && (
-        <>
-          <h2 className="text-xl font-bold mb-3">Auditipunktid</h2>
+      {/* Lisa punkt ainult adminile */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold">Auditipunktid</h2>
+        {isAdmin && (
+          <button className="px-3 py-2 rounded bg-black text-white" onClick={addPoint}>
+            + Lisa punkt
+          </button>
+        )}
+      </div>
 
-          {isAdmin && (
-            <button
-              onClick={addPoint}
-              className="bg-black text-white px-4 py-2 rounded mb-3"
-            >
-              + Lisa punkt
-            </button>
-          )}
-
-          {audit.points.map((p, i) => (
-            <div key={p.id} className="border rounded p-3 mb-3">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-lg">{i + 1}. {p.title}</span>
-
+      {/* Punktide loetelu */}
+      <div className="space-y-6">
+        {audit.points.map(point => (
+          <div key={point.id} className="border rounded-2xl p-4 shadow-sm">
+            <div className="flex gap-2 items-center mb-2">
+              <input
+                className="border p-2 rounded w-24"
+                placeholder="Kood"
+                value={point.code ?? ''}
+                onChange={e => updatePoint(point.id, { code: e.target.value })}
+                readOnly={!isAdmin}
+              />
+              {/* Bold/tume pealkiri */}
+              <input
+                className="border p-2 rounded flex-1 font-bold text-gray-900"
+                placeholder="Punkti pealkiri"
+                value={point.title}
+                onChange={e => updatePoint(point.id, { title: e.target.value })}
+                readOnly={!isAdmin}
+              />
+              <div className="ml-auto flex gap-2">
                 {isAdmin && (
-                  <button className="text-red-500" onClick={() => deletePoint(p.id)}>
-                    Kustuta punkt
-                  </button>
+                  <>
+                    <button className="px-3 py-1 border rounded" onClick={() => addSub(point, 'open' as QuestionType)}>
+                      + Küsimus
+                    </button>
+                    <button className="px-3 py-1 border rounded" onClick={() => addSub(point, 'multi' as QuestionType)}>
+                      + Valikvastustega
+                    </button>
+                    <button className="px-3 py-1 border rounded" onClick={() => removePoint(point.id)}>
+                      Kustuta punkt
+                    </button>
+                  </>
                 )}
               </div>
+            </div>
 
-              {p.subQuestions.map((sq) => (
-                <div key={sq.id} className="pl-4 pb-2 border-b">
-                  <b>{sq.text}</b>
-                  {isAdmin && (
-                    <button
-                      className="text-red-500 ml-2"
-                      onClick={() => deleteQuestion(p.id, sq.id)}
-                    >
-                      x
-                    </button>
+            {/* Alam-küsimused */}
+            <div className="space-y-3">
+              {point.subQuestions.map(sub => (
+                <div key={sub.id} className="border rounded-xl p-3">
+                  <div className="flex gap-2 items-center">
+                    <span className="text-xs px-2 py-1 border rounded">
+                      {sub.type === 'open' ? 'OPEN' : 'MULTI'}
+                    </span>
+                    <input
+                      className="border p-2 rounded flex-1"
+                      placeholder="Küsimuse tekst"
+                      value={sub.text}
+                      onChange={e => updateSub(point, sub.id, { text: e.target.value })}
+                      readOnly={!isAdmin}
+                    />
+                    {isAdmin && (
+                      <button className="px-2 py-1 border rounded" onClick={() => removeSub(point, sub.id)}>
+                        Kustuta
+                      </button>
+                    )}
+                  </div>
+
+                  {sub.type === 'multi' && (
+                    <MultiOptionsEditor
+                      sub={sub}
+                      canEdit={isAdmin}
+                      onChange={patch => updateSub(point, sub.id, patch)}
+                    />
+                  )}
+
+                  {sub.type === 'open' && (
+                    <input
+                      className="border p-2 rounded w-full mt-2"
+                      placeholder="Vastus (vaba tekst)"
+                      value={sub.answerText ?? ''}
+                      onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
+                    />
                   )}
                 </div>
               ))}
+            </div>
 
-              {isAdmin && (
-                <div className="flex gap-2 mt-2">
-                  <button className="bg-gray-200 px-3 py-1 rounded" onClick={() => addOpenQuestion(p.id)}>
-                    + Küsimus
-                  </button>
+            {/* Kommentaar */}
+            <div className="mt-3">
+              <label className="text-sm font-medium">Kommentaar</label>
+              <textarea
+                className="border p-2 rounded w-full mt-1"
+                rows={3}
+                value={point.comment ?? ''}
+                onChange={e => updatePoint(point.id, { comment: e.target.value })}
+              />
+            </div>
 
-                  <button className="bg-gray-200 px-3 py-1 rounded" onClick={() => addMultiQuestion(p.id)}>
-                    + Valikvastustega
-                  </button>
+            {/* Pildid */}
+            <div className="mt-3">
+              <div className="text-sm font-medium mb-1">Pildid</div>
+              <input type="file" accept="image/*" multiple onChange={e => addImages(point.id, e.target.files)} />
+              {(images[point.id]?.length ?? 0) > 0 && (
+                <div className="mt-2 grid md:grid-cols-2 gap-2">
+                  {images[point.id]!.map((src, i) => (
+                    <div key={i} className="border rounded p-1">
+                      <img src={src} alt={`Foto ${i + 1}`} className="w-full h-auto" />
+                      <div className="text-xs text-gray-600 mt-1">Foto {i + 1}</div>
+                      <button className="text-xs underline mt-1" onClick={() => removeImage(point.id, i)}>
+                        Eemalda
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          ))}
-        </>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MultiOptionsEditor({
+  sub,
+  onChange,
+  canEdit,
+}: {
+  sub: SubQuestion;
+  onChange: (p: Partial<SubQuestion>) => void;
+  canEdit: boolean;
+}) {
+  const opts = sub.options ?? [];
+
+  const addOpt = () => {
+    if (!canEdit) return;
+    onChange({ options: [...opts, { id: nanoid(), label: 'Uus valik' }] });
+  };
+
+  const setLabel = (id: string, label: string) => {
+    if (!canEdit) return;
+    onChange({
+      options: (sub.options ?? []).map(o => (o.id === id ? { ...o, label } : o)),
+    });
+  };
+
+  const toggle = (id: string) => {
+    const chosen = new Set(sub.answerOptions ?? []);
+    chosen.has(id) ? chosen.delete(id) : chosen.add(id);
+    onChange({ answerOptions: Array.from(chosen) });
+  };
+
+  const remove = (id: string) => {
+    if (!canEdit) return;
+    onChange({ options: (sub.options ?? []).filter(o => o.id !== id) });
+  };
+
+  return (
+    <div className="mt-2 space-y-2">
+      {(sub.options ?? []).map(o => (
+        <div key={o.id} className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={(sub.answerOptions ?? []).includes(o.id)}
+            onChange={() => toggle(o.id)}
+          />
+          <input
+            className="border p-1 rounded flex-1"
+            value={o.label}
+            onChange={e => setLabel(o.id, e.target.value)}
+            readOnly={!canEdit}
+          />
+          {canEdit && (
+            <button className="px-2 py-1 border rounded" onClick={() => remove(o.id)}>
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      {canEdit && (
+        <button className="px-2 py-1 border rounded" onClick={addOpt}>
+          + Lisa valik
+        </button>
       )}
     </div>
   );
-};
+}
 
-export default SupplierAuditPage;
