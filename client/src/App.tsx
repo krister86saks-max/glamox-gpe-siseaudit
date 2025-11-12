@@ -297,19 +297,24 @@ export default function App() {
 
       {/* Üks ja ainus päis kogu rakendusele */}
       <header className="flex items-center gap-3">
-        <img src="/logo.webp" className="h-16 print:h-16" alt="Glamox" />
-        <h1 className="text-2xl font-bold">GPE Audiitor 2.0</h1>
-        <div className="ml-auto flex items-center gap-2 no-print">
-          {!token ? (
-            <LoginForm defaultEmail="" defaultPass="" onLogin={login} />
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
-              <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>Logi välja</button>
-            </div>
-          )}
-        </div>
-      </header>
+  <img src="/logo.webp" className="h-16 print:h-16" alt="Glamox" />
+  <h1 className={`text-2xl font-bold ${mode === 'tarnijaaudit' ? 'print:hidden' : ''}`}>
+    GPE Audiitor 2.0
+  </h1>
+  <div className="ml-auto flex items-center gap-2 no-print">
+    {!token ? (
+      <LoginForm defaultEmail="" defaultPass="" onLogin={login} />
+    ) : (
+      <div className="flex items-center gap-2">
+        <span className="text-sm px-2 py-1 border rounded">Role: {role}</span>
+        <button className="px-2 py-1 border rounded" onClick={() => { setToken(null); setRole(null); }}>
+          Logi välja
+        </button>
+      </div>
+    )}
+  </div>
+</header>
+
 
       <div className="mt-4">
         <AuditModeTabs mode={mode} onChange={setMode} />
