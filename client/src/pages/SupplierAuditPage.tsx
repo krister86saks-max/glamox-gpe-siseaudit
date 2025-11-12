@@ -246,7 +246,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
         />
 
         <button
-          className="border p-2 rounded"
+          className="border p-2 rounded bg-green-100 border-green-600"
           disabled={!tplId}
           onClick={()=>{
             const tpl = templates.find(t=>t.id===tplId)
