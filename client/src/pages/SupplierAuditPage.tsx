@@ -44,7 +44,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       .catch(() => setTemplates([]))
   }, [])
 
-  // kui valin malli, pane ka nimi inputti
+  // kui valin malli, pane ka nimi inputti (väldi undefined)
   useEffect(() => {
     const t = templates.find(x => x.id === tplId)
     setTplName(t ? t.name : '')
