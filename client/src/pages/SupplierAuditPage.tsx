@@ -223,14 +223,19 @@ export default function SupplierAuditPage({ token, role }: Props) {
           <option value="">— Vali auditi liik —</option>
           {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <button className="border p-2 rounded"
+
+        {/* ROHELINE NUPP */}
+        <button
+          className={`border p-2 rounded ${tplId ? 'bg-green-100 border-green-600' : 'opacity-50 cursor-not-allowed'}`}
           disabled={!tplId}
           onClick={()=>{
             const tpl = templates.find(t=>t.id===tplId)
             if (tpl) applyTemplate(tpl)
-          }}>
+          }}
+        >
           Ava küsimustik
         </button>
+
         {role === 'admin' && (
           <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
             Salvesta mallina
@@ -352,3 +357,4 @@ function MultiOptionsEditor({ sub, onChange, readonly }: { sub: SubQuestion; onC
     </div>
   )
 }
+

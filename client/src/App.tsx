@@ -297,7 +297,7 @@ export default function App() {
 
       {/* Üks ja ainus päis kogu rakendusele */}
       <header className="flex items-center gap-3">
-        <img src="/logo.webp" className="h-8 print:h-8" alt="Glamox" />
+        <img src="/logo.webp" className="h-16 print:h-16" alt="Glamox" />
         <h1 className="text-2xl font-bold">GPE Audiitor 2.0</h1>
         <div className="ml-auto flex items-center gap-2 no-print">
           {!token ? (
