@@ -17,7 +17,6 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
   const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([])
   const [tplId, setTplId] = useState<string>('')
-  const [tplName, setTplName] = useState<string>('') // adminile nimi muutmiseks
 
   const [images, setImages] = useState<Record<string, string[]>>({})
 
@@ -35,30 +34,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
   }, [])
 
   // Lae mallid serverist
-  async function loadTemplates() {
-    try {
-      const r = await fetch('/api/supplier-audit-templates')
-      const list: SupplierAuditTemplate[] = await r.json()
-      setTemplates(list)
-      // kui valitud id on veel olemas, hoia nimi syncis
-      if (tplId) {
-        const t = list.find(x => x.id === tplId)
-        setTplName(t?.name ?? '')
-      }
-    } catch (e) {
-      console.error('Mallide laadimine ebaõnnestus', e)
-      setTemplates([])
-    }
-  }
-  useEffect(() => { loadTemplates() }, [])
-
-  // kui valik muutub, uuenda tplName
   useEffect(() => {
-    const t = templates.find(x => x.id === tplId)
-    setTplName(t?.name ?? '')
-  }, [tplId, templates])
+    fetch('/api/supplier-audit-templates')
+      .then(r => r.json())
+      .then((list: SupplierAuditTemplate[]) => setTemplates(list))
+      .catch(() => setTemplates([]))
+  }, [])
 
-  // rakenda mall auditisse (uued id-d, et ei segaks päris malli objekte)
+  // rakenda mall
   function applyTemplate(tpl: SupplierAuditTemplate) {
     function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
       return {
@@ -143,11 +126,21 @@ export default function SupplierAuditPage({ token, role }: Props) {
     })
   }
 
-  // Abi: koosta payload malliks (eemaldame vastused)
-  function buildTemplatePayloadFromAudit(nameOverride?: string) {
-    if (!audit) return null
-    return {
-      name: (nameOverride ?? tplName || '(nimetu)').trim(),
+  // Malli salvestamine (admin)
+  async function saveAsTemplate() {
+    if (role !== 'admin' || !token) {
+      alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
+      return
+    }
+    if (!audit) return
+
+    // ära sega ?? ja || — kasuta ainult || ja puhasta nimi
+    const raw = window.prompt('Mallile nimi (nt "Supplier – Plastic Moulding")?') || ''
+    const name = raw.trim()
+    if (!name) return
+
+    const payload = {
+      name,
       points: audit.points.map(p => ({
         id: p.id,
         code: p.code,
@@ -157,81 +150,29 @@ export default function SupplierAuditPage({ token, role }: Props) {
           id: s.id,
           text: s.text,
           type: s.type,
-          options: s.options?.map(o => ({ id: o.id, label: o.label }))
+          options: (s.options || []).map(o => ({ id: o.id, label: o.label }))
         }))
       }))
     }
-  }
-
-  // Loo uus mall (POST)
-  async function createTemplate() {
-    if (role !== 'admin' || !token) return alert('Vajalik admini sisselogimine.')
-    const name = window.prompt('Mallile nimi (nt "Supplier – Plastic Moulding")?', tplName || '')
-    if (!name) return
-    const payload = buildTemplatePayloadFromAudit(name)
-    if (!payload) return
 
     const r = await fetch('/api/supplier-audit-templates', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token
+      },
       body: JSON.stringify(payload)
     })
-    let j: any = null
-    try { j = await r.json() } catch {}
     if (!r.ok) {
-      alert('Malli loomine ebaõnnestus: ' + (j?.error || r.status + ' ' + r.statusText))
+      let j: any = {}
+      try { j = await r.json() } catch {}
+      alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText))
       return
     }
-    await loadTemplates()
-    setTplId(j.id)
-    setTplName(j.name || name)
-    alert('Mall salvestatud uue mallina.')
-  }
-
-  // Uuenda olemasolevat malli (PUT) – ilma promptita, võtab nime "Malli nimi" väljalt
-  async function updateTemplate() {
-    if (role !== 'admin' || !token) return alert('Vajalik admini sisselogimine.')
-    if (!tplId) return alert('Vali kõigepealt mall, mida uuendada.')
-    const payload = buildTemplatePayloadFromAudit(tplName)
-    if (!payload) return
-
-    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify(payload)
-    })
-    let j: any = null
-    try { j = await r.json() } catch {}
-    if (!r.ok) {
-      alert('Malli uuendamine ebaõnnestus: ' + (j?.error || r.status + ' ' + r.statusText))
-      return
-    }
-    await loadTemplates()
-    alert('Mall uuendatud.')
-  }
-
-  // Kustuta mall (DELETE)
-  async function deleteTemplate() {
-    if (role !== 'admin' || !token) return alert('Vajalik admini sisselogimine.')
-    if (!tplId) return alert('Vali kõigepealt mall.')
-    const current = templates.find(t => t.id === tplId)
-    if (!current) return alert('Valitud malli ei leitud.')
-    if (!confirm(`Kustutan malli "${current.name}"?`)) return
-
-    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
-      method: 'DELETE',
-      headers: { Authorization: 'Bearer ' + token }
-    })
-    let j: any = null
-    try { j = await r.json() } catch {}
-    if (!r.ok) {
-      alert('Malli kustutamine ebaõnnestus: ' + (j?.error || r.status + ' ' + r.statusText))
-      return
-    }
-    await loadTemplates()
-    setTplId('')
-    setTplName('')
-    alert('Mall kustutatud.')
+    const tpl: SupplierAuditTemplate = await r.json()
+    setTemplates(prev => [...prev, tpl])
+    setTplId(tpl.id)
+    alert('Mall salvestatud.')
   }
 
   // poolik alla / üles
@@ -282,21 +223,11 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
       {/* Mallid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2 no-print">
-        <select
-          className="border p-2 rounded"
-          value={tplId}
-          onChange={e=>{
-            setTplId(e.target.value)
-            const t = templates.find(x => x.id === e.target.value)
-            setTplName(t?.name ?? '')
-          }}
-        >
+        <select className="border p-2 rounded" value={tplId} onChange={e=>setTplId(e.target.value)}>
           <option value="">— Vali auditi liik —</option>
           {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-
-        <button
-          className="border p-2 rounded"
+        <button className="border p-2 rounded"
           disabled={!tplId}
           onClick={()=>{
             const tpl = templates.find(t=>t.id===tplId)
@@ -304,25 +235,12 @@ export default function SupplierAuditPage({ token, role }: Props) {
           }}>
           Ava küsimustik
         </button>
-
-        {role === 'admin' ? (
-          <>
-            {/* Malli nimi redigeeritav (admin) */}
-            <input
-              className="border p-2 rounded"
-              placeholder="Malli nimi"
-              value={tplName}
-              onChange={e=>setTplName(e.target.value)}
-            />
-            <div className="flex gap-2 flex-wrap">
-              <button className="border p-2 rounded" onClick={createTemplate}>Salvesta uue mallina</button>
-              <button className="border p-2 rounded" disabled={!tplId} onClick={updateTemplate}>Salvesta valitud mall</button>
-              <button className="border p-2 rounded" disabled={!tplId} onClick={deleteTemplate}>Kustuta mall</button>
-            </div>
-          </>
-        ) : (
-          <button className="border p-2 rounded" onClick={handlePrint}>Salvesta PDF</button>
+        {role === 'admin' && (
+          <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
+            Salvesta mallina
+          </button>
         )}
+        <button className="border p-2 rounded" onClick={handlePrint}>Salvesta PDF</button>
       </div>
 
       {/* Punktid */}
@@ -416,14 +334,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
 function MultiOptionsEditor({ sub, onChange, readonly }: { sub: SubQuestion; onChange: (p: Partial<SubQuestion>) => void; readonly?: boolean }) {
   const opts = sub.options ?? []
-  const addOpt = () => !readonly && onChange({ options: [...opts, { id: nanoid(), label: 'Uus valik' }] })
-  const setLabel = (id: string, label: string) => !readonly && onChange({ options: (sub.options ?? []).map(o => o.id === id ? { ...o, label } : o) })
+  const addOpt = () => { if (!readonly) onChange({ options: [...opts, { id: nanoid(), label: 'Uus valik' }] }) }
+  const setLabel = (id: string, label: string) => { if (!readonly) onChange({ options: (sub.options ?? []).map(o => o.id === id ? { ...o, label } : o) }) }
   const toggle = (id: string) => {
     const chosen = new Set(sub.answerOptions ?? [])
-    chosen.has(id) ? chosen.delete(id) : chosen.add(id)
+    if (chosen.has(id)) chosen.delete(id); else chosen.add(id)
     onChange({ answerOptions: Array.from(chosen) })
   }
-  const remove = (id: string) => !readonly && onChange({ options: (sub.options ?? []).filter(o => o.id !== id) })
+  const remove = (id: string) => { if (!readonly) onChange({ options: (sub.options ?? []).filter(o => o.id !== id) }) }
 
   return (
     <div className="mt-2 space-y-2">
