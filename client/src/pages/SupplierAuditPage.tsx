@@ -15,9 +15,12 @@ interface Props {
 export default function SupplierAuditPage({ token, role }: Props) {
   const [audit, setAudit] = useState<SupplierAudit | null>(null)
 
+  // Mallid
   const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([])
-  const [tplId, setTplId] = useState<string>('')
+  const [tplId, setTplId] = useState<string>('')          // valitud malli ID
+  const [tplName, setTplName] = useState<string>('')      // valitud malli nimi (muudetav)
 
+  // Pildid per-punkt
   const [images, setImages] = useState<Record<string, string[]>>({})
 
   // tühi mustand
@@ -41,7 +44,33 @@ export default function SupplierAuditPage({ token, role }: Props) {
       .catch(() => setTemplates([]))
   }, [])
 
-  // rakenda mall
+  // kui valin malli, pane ka nimi inputti
+  useEffect(() => {
+    const t = templates.find(x => x.id === tplId)
+    setTplName(t ? t.name : '')
+  }, [tplId, templates])
+
+  // util: võta ekraanilt audit -> malli struktuur (vastused eemaldame)
+  function auditToTemplatePayload(nameOverride?: string) {
+    const name = (nameOverride ?? tplName ?? '').trim()
+    return {
+      name,
+      points: (audit?.points || []).map(p => ({
+        id: p.id,
+        code: p.code,
+        title: p.title,
+        comment: '',
+        subQuestions: p.subQuestions.map(s => ({
+          id: s.id,
+          text: s.text,
+          type: s.type,
+          options: (s.options || []).map(o => ({ id: o.id, label: o.label }))
+        }))
+      }))
+    }
+  }
+
+  // rakenda mall auditisse (uued id-d alamatele)
   function applyTemplate(tpl: SupplierAuditTemplate) {
     function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
       return {
@@ -63,30 +92,20 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setImages({})
   }
 
-  // CRUD punktidele
+  // Punktide CRUD
   const addPoint = () => {
     if (!audit) return
     const p: SupplierAuditPoint = { id: nanoid(), title: 'Uus punkt', code: '', subQuestions: [], comment: '' }
     setAudit({ ...audit, points: [...audit.points, p] })
   }
-
   const updatePoint = (id: string, patch: Partial<SupplierAuditPoint>) => {
     if (!audit) return
-    setAudit({
-      ...audit,
-      points: audit.points.map(p => p.id === id ? { ...p, ...patch } : p)
-    })
+    setAudit({ ...audit, points: audit.points.map(p => p.id === id ? { ...p, ...patch } : p) })
   }
-
   const removePoint = (id: string) => {
     if (!audit) return
-    setAudit({
-      ...audit,
-      points: audit.points.filter(p => p.id !== id)
-    })
-    setImages(prev => {
-      const cp = { ...prev }; delete cp[id]; return cp;
-    })
+    setAudit({ ...audit, points: audit.points.filter(p => p.id !== id) })
+    setImages(prev => { const cp = { ...prev }; delete cp[id]; return cp })
   }
 
   // Alam-küsimused
@@ -94,18 +113,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
     const sub: SubQuestion = { id: nanoid(), text: 'Uus küsimus', type }
     updatePoint(point.id, { subQuestions: [...point.subQuestions, sub] })
   }
-
   const updateSub = (point: SupplierAuditPoint, id: string, patch: Partial<SubQuestion>) => {
-    const subs = point.subQuestions.map(s => s.id === id ? { ...s, ...patch } : s)
-    updatePoint(point.id, { subQuestions: subs })
+    updatePoint(point.id, { subQuestions: point.subQuestions.map(s => s.id === id ? { ...s, ...patch } : s) })
   }
-
   const removeSub = (point: SupplierAuditPoint, id: string) => {
-    const subs = point.subQuestions.filter(s => s.id !== id)
-    updatePoint(point.id, { subQuestions: subs })
+    updatePoint(point.id, { subQuestions: point.subQuestions.filter(s => s.id !== id) })
   }
 
-  // pildid per punkt
+  // Pildid
   function addImages(pointId: string, files: FileList | null) {
     if (!files || files.length === 0) return
     const list = Array.from(files)
@@ -114,65 +129,60 @@ export default function SupplierAuditPage({ token, role }: Props) {
       r.onload = () => resolve(String(r.result))
       r.onerror = reject
       r.readAsDataURL(f)
-    }))).then(urls => {
-      setImages(p => ({ ...p, [pointId]: [...(p[pointId] || []), ...urls] }))
-    })
+    }))).then(urls => setImages(p => ({ ...p, [pointId]: [...(p[pointId] || []), ...urls] })))
   }
   function removeImage(pointId: string, idx: number) {
-    setImages(p => {
-      const arr = [...(p[pointId] || [])]
-      arr.splice(idx, 1)
-      return { ...p, [pointId]: arr }
-    })
+    setImages(p => { const arr = [...(p[pointId] || [])]; arr.splice(idx,1); return { ...p, [pointId]: arr } })
   }
 
-  // Malli salvestamine (admin)
+  // POST: loo uus mall
   async function saveAsTemplate() {
-    if (role !== 'admin' || !token) {
-      alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
-      return
-    }
+    if (role !== 'admin' || !token) { alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).'); return }
     if (!audit) return
-
-    // ära sega ?? ja || — kasuta ainult || ja puhasta nimi
-    const raw = window.prompt('Mallile nimi (nt "Supplier – Plastic Moulding")?') || ''
-    const name = raw.trim()
+    const ask = window.prompt('Uue malli nimi?') || ''
+    const name = ask.trim()
     if (!name) return
-
-    const payload = {
-      name,
-      points: audit.points.map(p => ({
-        id: p.id,
-        code: p.code,
-        title: p.title,
-        comment: '',
-        subQuestions: p.subQuestions.map(s => ({
-          id: s.id,
-          text: s.text,
-          type: s.type,
-          options: (s.options || []).map(o => ({ id: o.id, label: o.label }))
-        }))
-      }))
-    }
-
+    const payload = auditToTemplatePayload(name)
     const r = await fetch('/api/supplier-audit-templates', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token
-      },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
       body: JSON.stringify(payload)
     })
-    if (!r.ok) {
-      let j: any = {}
-      try { j = await r.json() } catch {}
-      alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText))
-      return
-    }
-    const tpl: SupplierAuditTemplate = await r.json()
-    setTemplates(prev => [...prev, tpl])
-    setTplId(tpl.id)
-    alert('Mall salvestatud.')
+    let j: any = {}; try { j = await r.json() } catch {}
+    if (!r.ok) return alert(j.error || r.statusText)
+    setTemplates(prev => [...prev, j])
+    setTplId(j.id); setTplName(j.name)
+    alert('Uus mall salvestatud.')
+  }
+
+  // PUT: kirjuta valitud mall üle
+  async function saveSelectedTemplate() {
+    if (role !== 'admin' || !token) { alert('Vajalik admini sisselogimine.'); return }
+    if (!tplId) return alert('Vali esmalt mall.')
+    const payload = auditToTemplatePayload() // kasutab tplName’it
+    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(payload)
+    })
+    let j: any = {}; try { j = await r.json() } catch {}
+    if (!r.ok) return alert(j.error || r.statusText)
+    // värskenda loendit
+    setTemplates(prev => prev.map(t => t.id === j.id ? j : t))
+    alert('Mall uuendatud.')
+  }
+
+  // DELETE: kustuta valitud mall
+  async function deleteSelectedTemplate() {
+    if (role !== 'admin' || !token) { alert('Vajalik admini sisselogimine.'); return }
+    if (!tplId) return alert('Vali esmalt mall.')
+    if (!confirm('Kustutan malli?')) return
+    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+      method: 'DELETE', headers: { Authorization: 'Bearer ' + token }
+    })
+    let j: any = {}; try { j = await r.json() } catch {}
+    if (!r.ok) return alert(j.error || r.statusText)
+    setTemplates(prev => prev.filter(t => t.id !== tplId))
+    setTplId(''); setTplName('')
+    alert('Mall kustutatud.')
   }
 
   // poolik alla / üles
@@ -200,7 +210,6 @@ export default function SupplierAuditPage({ token, role }: Props) {
   }
 
   function handlePrint() { window.print() }
-
   if (!audit) return null
 
   return (
@@ -222,12 +231,22 @@ export default function SupplierAuditPage({ token, role }: Props) {
       </div>
 
       {/* Mallid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 no-print">
-        <select className="border p-2 rounded" value={tplId} onChange={e=>setTplId(e.target.value)}>
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-center no-print">
+        <select className="border p-2 rounded md:col-span-2" value={tplId} onChange={e=>setTplId(e.target.value)}>
           <option value="">— Vali auditi liik —</option>
           {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <button className="border p-2 rounded"
+
+        <input
+          className="border p-2 rounded"
+          placeholder="Malli nimi (muudetav)"
+          value={tplName}
+          onChange={e => setTplName(e.target.value)}
+          disabled={!tplId || role !== 'admin'}
+        />
+
+        <button
+          className="border p-2 rounded"
           disabled={!tplId}
           onClick={()=>{
             const tpl = templates.find(t=>t.id===tplId)
@@ -235,22 +254,29 @@ export default function SupplierAuditPage({ token, role }: Props) {
           }}>
           Ava küsimustik
         </button>
+
         {role === 'admin' && (
-          <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
-            Salvesta mallina
-          </button>
+          <>
+            <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
+              Salvesta mallina
+            </button>
+            <button className="border p-2 rounded" disabled={!tplId} onClick={saveSelectedTemplate}>
+              Salvesta valitud
+            </button>
+            <button className="border p-2 rounded text-red-700" disabled={!tplId} onClick={deleteSelectedTemplate}>
+              Kustuta mall
+            </button>
+          </>
         )}
-        <button className="border p-2 rounded" onClick={handlePrint}>Salvesta PDF</button>
+
+        <button className="border p-2 rounded md:col-start-6" onClick={handlePrint}>Salvesta PDF</button>
       </div>
 
       {/* Punktid */}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Auditipunktid</h2>
-
         {role === 'admin' && (
-          <button className="px-3 py-2 rounded bg-black text-white no-print" onClick={addPoint}>
-            + Lisa punkt
-          </button>
+          <button className="px-3 py-2 rounded bg-black text-white no-print" onClick={addPoint}>+ Lisa punkt</button>
         )}
       </div>
 
@@ -273,7 +299,6 @@ export default function SupplierAuditPage({ token, role }: Props) {
               </div>
             </div>
 
-            {/* alam-küsimused */}
             <div className="space-y-3">
               {point.subQuestions.map(sub => (
                 <div key={sub.id} className="border rounded-xl p-3">
@@ -302,14 +327,12 @@ export default function SupplierAuditPage({ token, role }: Props) {
               ))}
             </div>
 
-            {/* kommentaar */}
             <div className="mt-3">
               <label className="text-sm font-medium">Kommentaar</label>
               <textarea className="border p-2 rounded w-full mt-1" rows={3}
                         value={point.comment ?? ''} onChange={e=>updatePoint(point.id, { comment: e.target.value })} />
             </div>
 
-            {/* pildid */}
             <div className="mt-3">
               <div className="text-sm font-medium mb-1">Pildid</div>
               <input type="file" accept="image/*" multiple onChange={e => addImages(point.id, e.target.files)} className="no-print" />
@@ -356,3 +379,4 @@ function MultiOptionsEditor({ sub, onChange, readonly }: { sub: SubQuestion; onC
     </div>
   )
 }
+
