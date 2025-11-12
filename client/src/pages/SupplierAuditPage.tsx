@@ -216,12 +216,38 @@ export default function SupplierAuditPage({ token, role }: Props) {
     <div className="space-y-4">
       {/* Meta */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-        <input className="border p-2 rounded" placeholder="Tarnija nimi"
-          value={audit.supplierName} onChange={e=>setAudit({ ...audit, supplierName: e.target.value })} />
-        <input className="border p-2 rounded" placeholder="Audiitor"
-          value={audit.auditor} onChange={e=>setAudit({ ...audit, auditor: e.target.value })} />
-        <input className="border p-2 rounded" type="date"
-          value={audit.date.slice(0,10)} onChange={e=>setAudit({ ...audit, date: new Date(e.target.value).toISOString() })} />
+  <input
+    className="border p-2 rounded"
+    placeholder="Tarnija nimi"
+    value={audit.supplierName}
+    onChange={e => setAudit({ ...audit, supplierName: e.target.value })}
+  />
+  <input
+    className="border p-2 rounded"
+    placeholder="Audiitor"
+    value={audit.auditor}
+    onChange={e => setAudit({ ...audit, auditor: e.target.value })}
+  />
+  <input
+    className="border p-2 rounded"
+    placeholder="Auditeeritav"
+    value={(audit as any).auditee ?? ''}
+    onChange={e => setAudit({ ...audit, auditee: e.target.value })}
+  />
+  <input
+    className="border p-2 rounded"
+    type="date"
+    value={audit.date.slice(0, 10)}
+    onChange={e => setAudit({ ...audit, date: new Date(e.target.value).toISOString() })}
+  />
+
+  <button className="border p-2 rounded no-print" onClick={downloadPartial}>Lae alla poolik audit</button>
+  <label className="border p-2 rounded text-center cursor-pointer no-print">
+    Ava poolik audit
+    <input type="file" className="hidden" accept="application/json" onChange={e => e.target.files && openPartial(e.target.files[0])} />
+  </label>
+</div>
+
 
         <button className="border p-2 rounded no-print" onClick={downloadPartial}>Lae alla poolik audit</button>
         <label className="border p-2 rounded text-center cursor-pointer no-print">
