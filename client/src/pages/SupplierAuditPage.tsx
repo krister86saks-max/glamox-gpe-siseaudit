@@ -47,7 +47,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
   // kui valin malli, pane ka nimi inputti (väldi undefined)
   useEffect(() => {
     const t = templates.find(x => x.id === tplId)
-    setTplName(t ? t.name : '')
+    setTplName(String(t?.name ?? ''));
   }, [tplId, templates])
 
   // util: võta ekraanilt audit -> malli struktuur (vastused eemaldame)
