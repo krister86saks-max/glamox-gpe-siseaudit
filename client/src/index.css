@@ -1,14 +1,24 @@
-/* üld */
-* { box-sizing: border-box; }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* ekraanil: no-print peidus pole */
-.no-print { }
+/* ekraanil ei tee midagi spetsiaalset – kõik Tailwindi klassid toimivad */
 
 /* --- PRINT --- */
 @media print {
+  /* peida elemendid, millel on no-print */
   .no-print { display: none !important; }
+  .hide-in-print { display: none !important; }
+  .print-only { display: block !important; }
 
-  /* checkboxid prindis nähtavaks (custom render) */
+  /* väldi plokkide lõhkumist lehe vahel */
+  .print-avoid-break,
+  .no-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* checkboxide linnukesed PDF-is nähtavaks */
   input[type="checkbox"] {
     -webkit-appearance: none;
     appearance: none;
@@ -23,14 +33,20 @@
     content: "✓";
     position: absolute;
     left: 1px;
-    top: -1px;
-    font-size: 14px;
-    line-height: 14px;
+    top: -2px;
+    font-size: 16px;
+    line-height: 16px;
     color: #000;
   }
 
-  /* textarea/inputs piirjooned PDF-is selgemaks */
+  /* piirjooned väljatrükis selgemaks */
   textarea, input, select {
     border: 1px solid #000 !important;
   }
+
+  /* piltide suurus trükis */
+  .img-print { width: 100% !important; height: auto !important; }
+
+  /* säilita värvid prindis (brauseri valik peab lubama) */
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
