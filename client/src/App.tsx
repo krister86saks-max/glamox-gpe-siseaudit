@@ -21,6 +21,12 @@ function slugify(name: string) {
 
 export default function App() {
   const [mode, setMode] = useState<'siseaudit' | 'tarnijaaudit'>('siseaudit')
+  useEffect(() => {
+    document.title =
+      mode === 'tarnijaaudit'
+        ? 'GPE Auditor 2.0 — Tarnijaaudit'
+        : 'GPE Auditor 2.0 — Siseaudit'
+  }, [mode])
 
   const [token, setToken] = useState<string | null>(null)
   const [role, setRole] = useState<'admin' | 'auditor' | 'external' | null>(null)
