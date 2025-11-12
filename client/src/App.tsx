@@ -295,11 +295,9 @@ export default function App() {
         }
       `}</style>
 
+      {/* Üks ja ainus päis kogu rakendusele */}
       <header className="flex items-center gap-3">
-        {/* Inline SVG logo – ei vaja faili ja ei tekita katkist pilti */}
-        <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
-          <circle cx="20" cy="20" r="20" fill="#E30613" />
-        </svg>
+        <img src="/logo.png" className="h-8 print:h-8" alt="Glamox" />
         <h1 className="text-2xl font-bold">GPE Audiitor 2.0</h1>
         <div className="ml-auto flex items-center gap-2 no-print">
           {!token ? (
@@ -325,6 +323,7 @@ export default function App() {
         <>
           <div className="mt-4" />
 
+          {/* Päis / meta-andmed */}
           <section className="mb-3 p-3 border rounded">
             <div className="grid md-grid-cols-2 md:grid-cols-2 gap-3">
               <div>
@@ -382,6 +381,7 @@ export default function App() {
             </div>
           </section>
 
+          {/* tööriistad */}
           <div className="mb-3 flex gap-2 items-center no-print">
             <button
               className="px-3 py-1 border rounded bg-green-100 border-green-600"
@@ -392,7 +392,7 @@ export default function App() {
               {questionsOpen ? 'Sulge küsimustik' : 'Ava küsimustik'}
             </button>
 
-            <button className="px-3 py-1 border rounded" onClick={downloadPartial}>Laadi alla poolik audit</button>
+            <button className="px-3 py-1 border rounded" onClick={downloadPartial}>Lae alla poolik audit</button>
 
             <label className="px-3 py-1 border rounded cursor-pointer">
               Ava poolik audit
@@ -549,6 +549,7 @@ export default function App() {
                 )}
               </div>
 
+              {/* küsimused */}
               <div className="md:col-span-3 space-y-3">
                 {!deptId ? (
                   <div>Vali protsess päisest, seejärel vajuta “Ava küsimustik”.</div>
