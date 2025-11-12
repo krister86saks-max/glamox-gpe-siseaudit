@@ -245,15 +245,26 @@ export default function SupplierAuditPage({ token, role }: Props) {
           disabled={!tplId || role !== 'admin'}
         />
 
-        <button
-          className="border p-2 rounded bg-green-100 border-green-600"
-          disabled={!tplId}
-          onClick={()=>{
-            const tpl = templates.find(t=>t.id===tplId)
-            if (tpl) applyTemplate(tpl)
-          }}>
-          Ava küsimustik
-        </button>
+        {/* Ava / Sulge audit nupp */}
+<button
+  className="border p-2 rounded bg-green-100 border-green-600"
+  disabled={!tplId && !(audit?.points?.length ?? 0)}
+  onClick={() => {
+    const isOpen = (audit?.points?.length ?? 0) > 0;
+    if (isOpen) {
+      // Sulge audit – puhasta punktid ja pildid
+      setAudit(a => (a ? { ...a, points: [] } : a));
+      setImages({});
+    } else {
+      // Ava audit – rakenda mall
+      const tpl = templates.find(t => t.id === tplId);
+      if (tpl) applyTemplate(tpl);
+    }
+  }}
+>
+  {(audit?.points?.length ?? 0) > 0 ? 'Sulge audit' : 'Ava küsimustik'}
+</button>
+
 
         {role === 'admin' && (
           <>
