@@ -358,8 +358,13 @@ export default function SupplierAuditPage({ token, role }: Props) {
           </>
         )}
 
-        <button className="border p-2 rounded md:col-start-6" onClick={handlePrint}>
-          Salvesta PDF
+        <button
+  className="px-3 py-2 rounded bg-gray-700 text-white border border-gray-700 no-print"
+  onClick={handlePrint}
+>
+  Salvesta PDF
+</button>
+
         </button>
       </div>
 
