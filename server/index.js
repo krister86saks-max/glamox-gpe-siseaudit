@@ -262,3 +262,6 @@ if (STATIC_ROOT) {
 }
 
 app.listen(PORT, () => console.log(`Glamox Auditor (Mongo) ${APP_VERSION} http://localhost:${PORT}`))
+
+
+

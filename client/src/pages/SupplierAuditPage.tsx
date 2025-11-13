@@ -15,6 +15,13 @@ interface Props {
   role: Role
 }
 
+// sama autoResize loogika, mis siseauditi poolel – textarea kasvab sisuga kaasa
+function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
+  const el = e.currentTarget
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 1000) + 'px'
+}
+
 export default function SupplierAuditPage({ token, role }: Props) {
   const [audit, setAudit] = useState<SupplierAudit | null>(null)
 
@@ -26,7 +33,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
   // Pildid per-punkt
   const [images, setImages] = useState<Record<string, string[]>>({})
 
-  // Lisaväljad (hoian eraldi, et tüübid ei lendas)
+  // Lisaväljad
   const [auditee, setAuditee] = useState<string>('')           // Auditeeritav
   const [summary, setSummary] = useState<string>('')           // Auditi kokkuvõte
 
@@ -93,11 +100,13 @@ export default function SupplierAuditPage({ token, role }: Props) {
           id: nanoid(),
           text: s.text,
           type: s.type,
-          options: s.options ? s.options.map(o => ({
-            id: nanoid(),
-            label: o.label,
-            score: o.score ?? 0
-          })) : undefined,
+          options: s.options
+            ? s.options.map(o => ({
+                id: nanoid(),
+                label: o.label,
+                score: o.score ?? 0
+              }))
+            : undefined,
           answerText: undefined,
           answerOptions: undefined
         }))
@@ -408,7 +417,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
       <div className="space-y-6">
         {audit.points.map(point => (
-          <div key={point.id} className="border rounded-2xl p-4 shadow-sm">
+          <div key={point.id} className="border rounded-2xl p-4 shadow-sm print-avoid-break">
             <div className="flex gap-2 items-center mb-2">
               <input
                 className="border p-2 rounded w-24"
@@ -443,14 +452,22 @@ export default function SupplierAuditPage({ token, role }: Props) {
             <div className="space-y-3">
               {point.subQuestions.map(sub => (
                 <div key={sub.id} className="border rounded-xl p-3">
-                  <div className="flex gap-2 items-center">
+                  <div className="flex gap-2 items-start">
                     <span className="text-xs px-2 py-1 border rounded">{sub.type === 'open' ? 'OPEN' : 'MULTI'}</span>
-                    <input
-                      className="border p-2 rounded flex-1"
-                      placeholder="Küsimuse tekst"
-                      value={sub.text}
-                      onChange={e => updateSub(point, sub.id, { text: e.target.value })}
-                    />
+
+                    {/* KÜSIMUSE TEKST: ekraanil input, prindis täislaiuses text-block */}
+                    <div className="flex-1">
+                      <input
+                        className="border p-2 rounded w-full hide-in-print"
+                        placeholder="Küsimuse tekst"
+                        value={sub.text}
+                        onChange={e => updateSub(point, sub.id, { text: e.target.value })}
+                      />
+                      <div className="print-only textarea-print mt-1">
+                        {sub.text}
+                      </div>
+                    </div>
+
                     {role === 'admin' && (
                       <button className="px-2 py-1 border rounded no-print" onClick={() => removeSub(point, sub.id)}>
                         Kustuta
@@ -459,30 +476,43 @@ export default function SupplierAuditPage({ token, role }: Props) {
                   </div>
 
                   {sub.type === 'multi' && (
-                    <MultiOptionsEditor sub={sub} readonly={role !== 'admin'} onChange={patch => updateSub(point, sub.id, patch)} />
+                    <MultiOptionsEditor
+                      sub={sub}
+                      readonly={role !== 'admin'}
+                      onChange={patch => updateSub(point, sub.id, patch)}
+                    />
                   )}
 
                   {sub.type === 'open' && (
-                    <input
-                      className="border p-2 rounded w-full mt-2"
-                      placeholder="Vastus (vaba tekst)"
-                      value={sub.answerText ?? ''}
-                      onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
-                    />
+                    <>
+                      <input
+                        className="border p-2 rounded w-full mt-2 hide-in-print"
+                        placeholder="Vastus (vaba tekst)"
+                        value={sub.answerText ?? ''}
+                        onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
+                      />
+                      <div className="print-only textarea-print mt-1">
+                        {sub.answerText ?? ''}
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
             </div>
 
-            {/* kommentaar */}
+            {/* KOMMENTAAR – autoResize + print-only plokk */}
             <div className="mt-3">
               <label className="text-sm font-medium">Kommentaar</label>
               <textarea
-                className="border p-2 rounded w-full mt-1"
+                className="border p-2 rounded w-full mt-1 hide-in-print"
                 rows={3}
                 value={point.comment ?? ''}
+                onInput={autoResize}
                 onChange={e => updatePoint(point.id, { comment: e.target.value })}
               />
+              <div className="print-only textarea-print mt-1">
+                {point.comment ?? ''}
+              </div>
             </div>
 
             {/* pildid */}
@@ -492,8 +522,8 @@ export default function SupplierAuditPage({ token, role }: Props) {
               {(images[point.id]?.length ?? 0) > 0 && (
                 <div className="mt-2 grid md:grid-cols-2 gap-2">
                   {images[point.id]!.map((src, i) => (
-                    <div key={i} className="border rounded p-1">
-                      <img src={src} alt={`Foto ${i + 1}`} className="w-full h-auto" />
+                    <div key={i} className="border rounded p-1 no-break">
+                      <img src={src} alt={`Foto ${i + 1}`} className="w-full h-auto img-print" />
                       <div className="text-xs text-gray-600 mt-1">Foto {i + 1}</div>
                       <button className="text-xs underline mt-1 no-print" onClick={() => removeImage(point.id, i)}>
                         Eemalda
@@ -509,7 +539,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
       {/* Punktisummad */}
       {maxScore > 0 && (
-        <div className="border rounded-2xl p-4">
+        <div className="border rounded-2xl p-4 print-avoid-break">
           <h3 className="text-lg font-semibold mb-2">Punktisumma</h3>
           <p>
             Skoor: <strong>{totalScore}</strong> / <strong>{maxScore}</strong>
@@ -524,15 +554,19 @@ export default function SupplierAuditPage({ token, role }: Props) {
         </div>
       )}
 
-      {/* Auditi kokkuvõte */}
-      <div className="border rounded-2xl p-4">
+      {/* AUDITI KOKKUVÕTE – autoResize + print-only */}
+      <div className="border rounded-2xl p-4 print-avoid-break">
         <h3 className="text-lg font-semibold mb-2">Auditi kokkuvõte</h3>
         <textarea
-          className="border rounded w-full p-2 min-h-[120px]"
+          className="border rounded w-full p-2 min-h-[120px] hide-in-print"
           placeholder="Kirjelda auditi üldist tulemust, riskikohti, leitud tugevusi jne."
           value={summary}
+          onInput={autoResize}
           onChange={e => setSummary(e.target.value)}
         />
+        <div className="print-only textarea-print mt-1">
+          {summary}
+        </div>
       </div>
     </div>
   )
@@ -609,4 +643,3 @@ function MultiOptionsEditor({
     </div>
   )
 }
-
