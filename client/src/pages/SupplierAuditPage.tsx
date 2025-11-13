@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { nanoid } from 'nanoid'
 import type {
   SupplierAudit,
@@ -26,8 +26,9 @@ export default function SupplierAuditPage({ token, role }: Props) {
   // Pildid per-punkt
   const [images, setImages] = useState<Record<string, string[]>>({})
 
-  // UUS: Auditeeritav – eraldi state, et vältida TS konflikte SupplierAudit tüübis
-  const [auditee, setAuditee] = useState<string>('')
+  // Lisaväljad (hoian eraldi, et tüübid ei lendas)
+  const [auditee, setAuditee] = useState<string>('')           // Auditeeritav
+  const [summary, setSummary] = useState<string>('')           // Auditi kokkuvõte
 
   // tühi mustand
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setTplName(String(t?.name ?? ''))
   }, [tplId, templates])
 
-  // util: võta ekraanilt audit -> malli struktuur (vastused eemaldame)
+  // util: ekraanilt audit -> malli struktuur (vastused eemaldame, skoorid alles)
   function auditToTemplatePayload(nameOverride?: string) {
     const name = (nameOverride ?? tplName ?? '').trim()
     return {
@@ -70,13 +71,17 @@ export default function SupplierAuditPage({ token, role }: Props) {
           id: s.id,
           text: s.text,
           type: s.type,
-          options: (s.options || []).map(o => ({ id: o.id, label: o.label }))
+          options: (s.options || []).map(o => ({
+            id: o.id,
+            label: o.label,
+            score: o.score ?? 0
+          }))
         }))
       }))
     }
   }
 
-  // rakenda mall auditisse (uued id-d alamatele)
+  // rakenda mall auditisse (uued id-d alamatele, skoorid säilivad)
   function applyTemplate(tpl: SupplierAuditTemplate) {
     function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
       return {
@@ -88,7 +93,11 @@ export default function SupplierAuditPage({ token, role }: Props) {
           id: nanoid(),
           text: s.text,
           type: s.type,
-          options: s.options ? s.options.map(o => ({ id: nanoid(), label: o.label })) : undefined,
+          options: s.options ? s.options.map(o => ({
+            id: nanoid(),
+            label: o.label,
+            score: o.score ?? 0
+          })) : undefined,
           answerText: undefined,
           answerOptions: undefined
         }))
@@ -230,10 +239,10 @@ export default function SupplierAuditPage({ token, role }: Props) {
     alert('Mall kustutatud.')
   }
 
-  // poolik alla / üles — lisame eraldi auditee
+  // poolik alla / üles — lisame auditee + summary ka
   function downloadPartial() {
     if (!audit) return
-    const payload = { audit, auditee, images }
+    const payload = { audit, auditee, summary, images }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -249,6 +258,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       setAudit(j.audit as SupplierAudit)
       setImages(j.images || {})
       setAuditee(j.auditee || '')
+      setSummary(j.summary || '')
       alert('Poolik tarnijaaudit laetud.')
     } catch {
       alert('Pooliku auditi avamine ebaõnnestus.')
@@ -258,6 +268,31 @@ export default function SupplierAuditPage({ token, role }: Props) {
   function handlePrint() {
     window.print()
   }
+
+  // Skooride arvutus
+  const { totalScore, maxScore } = useMemo(() => {
+    let total = 0
+    let max = 0
+    if (!audit) return { totalScore: 0, maxScore: 0 }
+
+    for (const p of audit.points) {
+      for (const s of p.subQuestions) {
+        if (s.type !== 'multi' || !s.options || s.options.length === 0) continue
+
+        const scores = s.options.map(o => o.score ?? 0)
+        const maxForQuestion = scores.length ? Math.max(...scores) : 0
+        max += maxForQuestion
+
+        const selectedIds = new Set(s.answerOptions ?? [])
+        for (const o of s.options) {
+          if (selectedIds.has(o.id)) {
+            total += o.score ?? 0
+          }
+        }
+      }
+    }
+    return { totalScore: total, maxScore: max }
+  }, [audit])
 
   if (!audit) return null
 
@@ -331,11 +366,9 @@ export default function SupplierAuditPage({ token, role }: Props) {
           disabled={!tplId && !isOpen}
           onClick={() => {
             if (isOpen) {
-              // Sulge audit – puhasta punktid ja pildid
               setAudit(a => (a ? { ...a, points: [] } : a))
               setImages({})
             } else {
-              // Ava audit – rakenda mall
               const tpl = templates.find(t => t.id === tplId)
               if (tpl) applyTemplate(tpl)
             }
@@ -358,13 +391,8 @@ export default function SupplierAuditPage({ token, role }: Props) {
           </>
         )}
 
-        <button
-  className="px-3 py-2 rounded bg-gray-700 text-white border border-gray-700 no-print"
-  onClick={handlePrint}
->
-  Salvesta PDF
-</button>
-
+        <button className="px-3 py-2 rounded bg-gray-700 text-white border border-gray-700 no-print" onClick={handlePrint}>
+          Salvesta PDF
         </button>
       </div>
 
@@ -478,6 +506,34 @@ export default function SupplierAuditPage({ token, role }: Props) {
           </div>
         ))}
       </div>
+
+      {/* Punktisummad */}
+      {maxScore > 0 && (
+        <div className="border rounded-2xl p-4">
+          <h3 className="text-lg font-semibold mb-2">Punktisumma</h3>
+          <p>
+            Skoor: <strong>{totalScore}</strong> / <strong>{maxScore}</strong>
+            {maxScore > 0 && (
+              <>
+                {' '}(
+                {Math.round((totalScore / maxScore) * 100)}
+                %)
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
+      {/* Auditi kokkuvõte */}
+      <div className="border rounded-2xl p-4">
+        <h3 className="text-lg font-semibold mb-2">Auditi kokkuvõte</h3>
+        <textarea
+          className="border rounded w-full p-2 min-h-[120px]"
+          placeholder="Kirjelda auditi üldist tulemust, riskikohti, leitud tugevusi jne."
+          value={summary}
+          onChange={e => setSummary(e.target.value)}
+        />
+      </div>
     </div>
   )
 }
@@ -493,10 +549,18 @@ function MultiOptionsEditor({
 }) {
   const opts = sub.options ?? []
   const addOpt = () => {
-    if (!readonly) onChange({ options: [...opts, { id: nanoid(), label: 'Uus valik' }] })
+    if (!readonly) onChange({ options: [...opts, { id: nanoid(), label: 'Uus valik', score: 0 }] })
   }
   const setLabel = (id: string, label: string) => {
     if (!readonly) onChange({ options: (sub.options ?? []).map(o => (o.id === id ? { ...o, label } : o)) })
+  }
+  const setScore = (id: string, scoreStr: string) => {
+    if (readonly) return
+    const val = Number(scoreStr.replace(',', '.'))
+    const score = isNaN(val) ? 0 : val
+    onChange({
+      options: (sub.options ?? []).map(o => (o.id === id ? { ...o, score } : o))
+    })
   }
   const toggle = (id: string) => {
     const chosen = new Set(sub.answerOptions ?? [])
@@ -513,7 +577,23 @@ function MultiOptionsEditor({
       {(sub.options ?? []).map(o => (
         <div key={o.id} className="flex items-center gap-2">
           <input type="checkbox" checked={(sub.answerOptions ?? []).includes(o.id)} onChange={() => toggle(o.id)} />
-          <input className="border p-1 rounded flex-1" value={o.label} onChange={e => setLabel(o.id, e.target.value)} readOnly={readonly} />
+          <input
+            className="border p-1 rounded flex-1"
+            value={o.label}
+            onChange={e => setLabel(o.id, e.target.value)}
+            readOnly={readonly}
+            placeholder="Valiku tekst"
+          />
+          <input
+            className="border p-1 rounded w-20 text-right"
+            type="number"
+            min={0}
+            step={1}
+            value={o.score ?? 0}
+            onChange={e => setScore(o.id, e.target.value)}
+            readOnly={readonly}
+            placeholder="Skoor"
+          />
           {!readonly && (
             <button className="px-2 py-1 border rounded no-print" onClick={() => remove(o.id)}>
               ×
@@ -529,3 +609,4 @@ function MultiOptionsEditor({
     </div>
   )
 }
+
