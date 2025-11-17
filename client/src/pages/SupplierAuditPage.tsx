@@ -489,10 +489,13 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
                   {sub.type === 'open' && (
                     <>
-                      <input
+                      {/* SIIN ON MUUDATUS: input -> textarea + autoResize */}
+                      <textarea
                         className="border p-2 rounded w-full mt-2 hide-in-print"
                         placeholder="Vastus (vaba tekst)"
                         value={sub.answerText ?? ''}
+                        rows={2}
+                        onInput={autoResize}
                         onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
                       />
                       <div className="print-only textarea-print mt-1">
