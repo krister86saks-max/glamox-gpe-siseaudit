@@ -15,7 +15,7 @@ interface Props {
   role: Role
 }
 
-// sama autoResize loogika, mis siseauditi poolel – textarea kasvab sisuga kaasa
+// textarea automaatne kõrguse muutmine
 function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
   const el = e.currentTarget
   el.style.height = 'auto'
@@ -34,8 +34,8 @@ export default function SupplierAuditPage({ token, role }: Props) {
   const [images, setImages] = useState<Record<string, string[]>>({})
 
   // Lisaväljad
-  const [auditee, setAuditee] = useState<string>('')           // Auditeeritav
-  const [summary, setSummary] = useState<string>('')           // Auditi kokkuvõte
+  const [auditee, setAuditee] = useState<string>('') // Auditeeritav
+  const [summary, setSummary] = useState<string>('') // Auditi kokkuvõte
 
   // tühi mustand
   useEffect(() => {
@@ -58,13 +58,13 @@ export default function SupplierAuditPage({ token, role }: Props) {
       .catch(() => setTemplates([]))
   }, [])
 
-  // kui valin malli, pane ka nimi inputti (garanteeri string)
+  // kui valin malli, pane ka nimi inputti
   useEffect(() => {
     const t = templates.find(x => x.id === tplId)
     setTplName(String(t?.name ?? ''))
   }, [tplId, templates])
 
-  // util: ekraanilt audit -> malli struktuur (vastused eemaldame, skoorid alles)
+  // util: ekraanilt audit -> malli struktuur (vastused maha, skoorid alles)
   function auditToTemplatePayload(nameOverride?: string) {
     const name = (nameOverride ?? tplName ?? '').trim()
     return {
@@ -88,7 +88,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     }
   }
 
-  // rakenda mall auditisse (uued id-d alamatele, skoorid säilivad)
+  // rakenda mall auditisse (uued id-d alamatele)
   function applyTemplate(tpl: SupplierAuditTemplate) {
     function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
       return {
@@ -248,7 +248,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     alert('Mall kustutatud.')
   }
 
-  // poolik alla / üles — lisame auditee + summary ka
+  // poolik alla / üles — sh auditee + summary
   function downloadPartial() {
     if (!audit) return
     const payload = { audit, auditee, summary, images }
@@ -400,7 +400,10 @@ export default function SupplierAuditPage({ token, role }: Props) {
           </>
         )}
 
-        <button className="px-3 py-2 rounded bg-gray-700 text-white border border-gray-700 no-print" onClick={handlePrint}>
+        <button
+          className="px-3 py-2 rounded bg-gray-700 text-white border border-gray-700 no-print"
+          onClick={handlePrint}
+        >
           Salvesta PDF
         </button>
       </div>
@@ -455,15 +458,16 @@ export default function SupplierAuditPage({ token, role }: Props) {
                   <div className="flex gap-2 items-start">
                     <span className="text-xs px-2 py-1 border rounded">{sub.type === 'open' ? 'OPEN' : 'MULTI'}</span>
 
-                    {/* KÜSIMUSE TEKST: ekraanil input, prindis täislaiuses text-block */}
+                    {/* KÜSIMUSE TEKST – textarea ekraanil (wrap, auto height), printis sinine blokk */}
                     <div className="flex-1">
-                      <input
-                        className="border p-2 rounded w-full hide-in-print"
+                      <textarea
+                        className="border p-2 rounded w-full hide-in-print text-blue-700"
                         placeholder="Küsimuse tekst"
                         value={sub.text}
+                        onInput={autoResize}
                         onChange={e => updateSub(point, sub.id, { text: e.target.value })}
                       />
-                      <div className="print-only textarea-print mt-1">
+                      <div className="print-only textarea-print mt-1 text-blue-700">
                         {sub.text}
                       </div>
                     </div>
@@ -500,7 +504,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
               ))}
             </div>
 
-            {/* KOMMENTAAR – autoResize + print-only plokk */}
+            {/* KOMMENTAAR – autoResize + print-only */}
             <div className="mt-3">
               <label className="text-sm font-medium">Kommentaar</label>
               <textarea
@@ -518,14 +522,23 @@ export default function SupplierAuditPage({ token, role }: Props) {
             {/* pildid */}
             <div className="mt-3">
               <div className="text-sm font-medium mb-1">Pildid</div>
-              <input type="file" accept="image/*" multiple onChange={e => addImages(point.id, e.target.files)} className="no-print" />
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={e => addImages(point.id, e.target.files)}
+                className="no-print"
+              />
               {(images[point.id]?.length ?? 0) > 0 && (
                 <div className="mt-2 grid md:grid-cols-2 gap-2">
                   {images[point.id]!.map((src, i) => (
                     <div key={i} className="border rounded p-1 no-break">
                       <img src={src} alt={`Foto ${i + 1}`} className="w-full h-auto img-print" />
                       <div className="text-xs text-gray-600 mt-1">Foto {i + 1}</div>
-                      <button className="text-xs underline mt-1 no-print" onClick={() => removeImage(point.id, i)}>
+                      <button
+                        className="text-xs underline mt-1 no-print"
+                        onClick={() => removeImage(point.id, i)}
+                      >
                         Eemalda
                       </button>
                     </div>
@@ -545,9 +558,8 @@ export default function SupplierAuditPage({ token, role }: Props) {
             Skoor: <strong>{totalScore}</strong> / <strong>{maxScore}</strong>
             {maxScore > 0 && (
               <>
-                {' '}(
-                {Math.round((totalScore / maxScore) * 100)}
-                %)
+                {' '}
+                ({Math.round((totalScore / maxScore) * 100)}%)
               </>
             )}
           </p>
@@ -610,7 +622,11 @@ function MultiOptionsEditor({
     <div className="mt-2 space-y-2">
       {(sub.options ?? []).map(o => (
         <div key={o.id} className="flex items-center gap-2">
-          <input type="checkbox" checked={(sub.answerOptions ?? []).includes(o.id)} onChange={() => toggle(o.id)} />
+          <input
+            type="checkbox"
+            checked={(sub.answerOptions ?? []).includes(o.id)}
+            onChange={() => toggle(o.id)}
+          />
           <input
             className="border p-1 rounded flex-1"
             value={o.label}

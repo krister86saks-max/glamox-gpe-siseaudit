@@ -601,7 +601,7 @@ export default function App() {
                           )}
                         </div>
 
-                        <div className="mt-2">{q.text}</div>
+                        <div className="mt-2 text-blue-700">{q.text}</div>
                         {q.guidance && <div className="text-xs text-gray-600 mt-1">Juhend auditeerijale: {q.guidance}</div>}
 
                         <div className="mt-2 flex gap-3 flex-wrap items-center">
