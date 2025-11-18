@@ -16,14 +16,14 @@ interface Props {
   role: Role
 }
 
-// abifunktsioon textarea automaatseks kõrguse muutmiseks
+// textarea automaatne kõrgus
 function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
   const el = e.currentTarget
   el.style.height = 'auto'
   el.style.height = Math.min(el.scrollHeight, 400) + 'px'
 }
 
-// ehita payload auditist (kasutame nii POST kui PUT jaoks)
+// payload malli salvestamiseks
 function buildTemplatePayload(audit: SupplierAudit, name: string) {
   return {
     name,
@@ -39,7 +39,6 @@ function buildTemplatePayload(audit: SupplierAudit, name: string) {
         options: s.options?.map(o => ({
           id: o.id,
           label: o.label,
-          // salvestame skoori kui number
           score: (() => {
             const raw = (o as any).score
             if (raw === undefined || raw === null || raw === '') return 0
@@ -73,7 +72,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setAudit(draft)
   }, [])
 
-  // lae mallid serverist
+  // lae mallid
   useEffect(() => {
     fetch('/api/supplier-audit-templates')
       .then(r => r.json())
@@ -81,7 +80,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       .catch(() => setTemplates([]))
   }, [])
 
-  // --- skoori kokkuvõte (ainult MULTI küsimused) ---
+  // punktisumma (MULTI küsimused)
   const scoreSummary = useMemo(() => {
     if (!audit) return { total: 0, max: 0 }
 
@@ -115,7 +114,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     return { total, max }
   }, [audit])
 
-  // rakenda mall
+  // rakenda valitud mall
   function applyTemplate(tpl: SupplierAuditTemplate) {
     function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
       return {
@@ -131,7 +130,6 @@ export default function SupplierAuditPage({ token, role }: Props) {
             ? s.options.map(o => ({
                 id: nanoid(),
                 label: o.label,
-                // skoori säilitame kui olemas
                 score: (o as any).score,
               })) as any
             : undefined,
@@ -144,7 +142,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setImages({})
   }
 
-  // CRUD punktidele
+  // punktide CRUD
   const addPoint = () => {
     if (!audit) return
     const p: SupplierAuditPoint = {
@@ -178,7 +176,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     })
   }
 
-  // punktide järjekord (admin)
+  // punktide liigutamine ↑ ↓
   const movePoint = (id: string, dir: -1 | 1) => {
     if (!audit) return
     const idx = audit.points.findIndex(p => p.id === id)
@@ -207,6 +205,18 @@ export default function SupplierAuditPage({ token, role }: Props) {
     updatePoint(point.id, { subQuestions: subs })
   }
 
+  // alam-küsimuste liigutamine punktis sees
+  const moveSub = (point: SupplierAuditPoint, id: string, dir: -1 | 1) => {
+    const subs = [...point.subQuestions]
+    const idx = subs.findIndex(s => s.id === id)
+    if (idx < 0) return
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= subs.length) return
+    const [item] = subs.splice(idx, 1)
+    subs.splice(newIdx, 0, item)
+    updatePoint(point.id, { subQuestions: subs })
+  }
+
   // pildid per punkt
   function addImages(pointId: string, files: FileList | null) {
     if (!files || files.length === 0) return
@@ -229,7 +239,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     })
   }
 
-  // malli salvestamine (admin, UUS MALL – POST)
+  // UUS MALL (POST)
   async function saveAsTemplate() {
     if (role !== 'admin' || !token) {
       alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
@@ -260,7 +270,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     alert('Uus mall salvestatud.')
   }
 
-  // olemasoleva malli üle kirjutamine (admin, PUT)
+  // OLEMASOLEVA MALLI UUENDAMINE (PUT)
   async function saveTemplateChanges() {
     if (role !== 'admin' || !token) {
       alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
@@ -299,7 +309,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     alert('Malli muudatused salvestatud.')
   }
 
-  // malli kustutamine (admin)
+  // malli kustutamine
   async function deleteTemplate() {
     if (role !== 'admin' || !token) return
     if (!tplId) return
@@ -387,7 +397,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
         </label>
       </div>
 
-      {/* Mallid */}
+      {/* Mallid ja PDF nupp */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2 no-print">
         <select
           className="border p-2 rounded"
@@ -436,20 +446,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
           </>
         )}
 
-        {role !== 'admin' && (
-          <button className="border p-2 rounded" onClick={handlePrint}>
-            Salvesta PDF
-          </button>
-        )}
+        {/* Salvesta PDF – punane nupp */}
+        <button
+          className="border p-2 rounded bg-red-600 text-white"
+          onClick={handlePrint}
+        >
+          Salvesta PDF
+        </button>
       </div>
-
-      {role === 'admin' && (
-        <div className="no-print">
-          <button className="border p-2 rounded" onClick={handlePrint}>
-            Salvesta PDF
-          </button>
-        </div>
-      )}
 
       {/* Punktid */}
       <div className="flex justify-between items-center">
@@ -522,12 +526,26 @@ export default function SupplierAuditPage({ token, role }: Props) {
                       onChange={e => updateSub(point, sub.id, { text: e.target.value })}
                     />
                     {role === 'admin' && (
-                      <button
-                        className="px-2 py-1 border rounded no-print"
-                        onClick={() => removeSub(point, sub.id)}
-                      >
-                        Kustuta
-                      </button>
+                      <div className="flex flex-col gap-1 no-print">
+                        <button
+                          className="px-2 py-1 border rounded text-xs"
+                          onClick={() => moveSub(point, sub.id, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="px-2 py-1 border rounded text-xs"
+                          onClick={() => moveSub(point, sub.id, 1)}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          className="px-2 py-1 border rounded text-xs"
+                          onClick={() => removeSub(point, sub.id)}
+                        >
+                          Kustuta
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -684,6 +702,19 @@ function MultiOptionsEditor({
     })
   }
 
+  // valikvastuse liigutamine ↑ ↓
+  const moveOpt = (id: string, dir: -1 | 1) => {
+    if (readonly) return
+    const arr = [...(sub.options ?? [])]
+    const idx = arr.findIndex(o => o.id === id)
+    if (idx < 0) return
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= arr.length) return
+    const [item] = arr.splice(idx, 1)
+    arr.splice(newIdx, 0, item)
+    onChange({ options: arr as any })
+  }
+
   return (
     <div className="mt-2 space-y-2">
       {(sub.options ?? []).map(o => {
@@ -714,12 +745,26 @@ function MultiOptionsEditor({
               readOnly={readonly}
             />
             {!readonly && (
-              <button
-                className="px-2 py-1 border rounded no-print"
-                onClick={() => remove(o.id)}
-              >
-                ×
-              </button>
+              <div className="flex flex-col gap-1 no-print">
+                <button
+                  className="px-2 py-1 border rounded text-xs"
+                  onClick={() => moveOpt(o.id, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  className="px-2 py-1 border rounded text-xs"
+                  onClick={() => moveOpt(o.id, 1)}
+                >
+                  ↓
+                </button>
+                <button
+                  className="px-2 py-1 border rounded text-xs"
+                  onClick={() => remove(o.id)}
+                >
+                  ×
+                </button>
+              </div>
             )}
           </div>
         )
@@ -735,6 +780,7 @@ function MultiOptionsEditor({
     </div>
   )
 }
+
 
 
 
