@@ -23,6 +23,35 @@ function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
   el.style.height = Math.min(el.scrollHeight, 400) + 'px'
 }
 
+// ehita payload auditist (kasutame nii POST kui PUT jaoks)
+function buildTemplatePayload(audit: SupplierAudit, name: string) {
+  return {
+    name,
+    points: audit.points.map(p => ({
+      id: p.id,
+      code: p.code,
+      title: p.title,
+      comment: '',
+      subQuestions: p.subQuestions.map(s => ({
+        id: s.id,
+        text: s.text,
+        type: s.type,
+        options: s.options?.map(o => ({
+          id: o.id,
+          label: o.label,
+          // salvestame skoori kui number
+          score: (() => {
+            const raw = (o as any).score
+            if (raw === undefined || raw === null || raw === '') return 0
+            const num = Number(raw)
+            return Number.isFinite(num) ? num : 0
+          })()
+        }))
+      }))
+    }))
+  }
+}
+
 export default function SupplierAuditPage({ token, role }: Props) {
   const [audit, setAudit] = useState<SupplierAudit | null>(null)
 
@@ -200,7 +229,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     })
   }
 
-  // malli salvestamine (admin, uus mall – sama loogika mis sul alguses töötas)
+  // malli salvestamine (admin, UUS MALL – POST)
   async function saveAsTemplate() {
     if (role !== 'admin' || !token) {
       alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
@@ -210,31 +239,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     const name = window.prompt('Mallile nimi (nt "Supplier – Plastic Moulding")?')
     if (!name) return
 
-    const payload = {
-      name,
-      points: audit.points.map(p => ({
-        id: p.id,
-        code: p.code,
-        title: p.title,
-        comment: '',
-        subQuestions: p.subQuestions.map(s => ({
-          id: s.id,
-          text: s.text,
-          type: s.type,
-          options: s.options?.map(o => ({
-            id: o.id,
-            label: o.label,
-            // salvestame skoori kui number
-            score: (() => {
-              const raw = (o as any).score
-              if (raw === undefined || raw === null || raw === '') return 0
-              const num = Number(raw)
-              return Number.isFinite(num) ? num : 0
-            })()
-          }))
-        }))
-      }))
-    }
+    const payload = buildTemplatePayload(audit, name)
 
     const r = await fetch('/api/supplier-audit-templates', {
       method: 'POST',
@@ -252,7 +257,46 @@ export default function SupplierAuditPage({ token, role }: Props) {
     const tpl: SupplierAuditTemplate = await r.json()
     setTemplates(prev => [...prev, tpl])
     setTplId(tpl.id)
-    alert('Mall salvestatud.')
+    alert('Uus mall salvestatud.')
+  }
+
+  // olemasoleva malli üle kirjutamine (admin, PUT)
+  async function saveTemplateChanges() {
+    if (role !== 'admin' || !token) {
+      alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
+      return
+    }
+    if (!audit || !tplId) {
+      alert('Vali esmalt mall, mida soovid uuendada.')
+      return
+    }
+
+    const existing = templates.find(t => t.id === tplId)
+    if (!existing) {
+      alert('Valitud malli ei leitud.')
+      return
+    }
+
+    if (!window.confirm(`Kas kirjutada mall "${existing.name}" üle?`)) return
+
+    const payload = buildTemplatePayload(audit, existing.name)
+
+    const r = await fetch('/api/supplier-audit-templates/' + tplId, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token
+      },
+      body: JSON.stringify(payload)
+    })
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}))
+      alert('Malli uuendamine ebaõnnestus: ' + (j.error || r.statusText))
+      return
+    }
+    const updated: SupplierAuditTemplate = await r.json()
+    setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t))
+    alert('Malli muudatused salvestatud.')
   }
 
   // malli kustutamine (admin)
@@ -374,6 +418,13 @@ export default function SupplierAuditPage({ token, role }: Props) {
               onClick={saveAsTemplate}
             >
               Salvesta mallina
+            </button>
+            <button
+              className="border p-2 rounded"
+              disabled={!tplId}
+              onClick={saveTemplateChanges}
+            >
+              Salvesta muudatused
             </button>
             <button
               className="border p-2 rounded"
@@ -684,6 +735,7 @@ function MultiOptionsEditor({
     </div>
   )
 }
+
 
 
 
