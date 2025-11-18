@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { nanoid } from 'nanoid'
 import type {
-  SupplierAudit, SupplierAuditPoint, SubQuestion, QuestionType,
-  SupplierAuditTemplate
+  SupplierAudit,
+  SupplierAuditPoint,
+  SubQuestion,
+  QuestionType,
+  SupplierAuditTemplate,
 } from '../types/audit'
 
 type Role = 'admin' | 'auditor' | 'external' | null
@@ -15,13 +18,15 @@ interface Props {
 export default function SupplierAuditPage({ token, role }: Props) {
   const [audit, setAudit] = useState<SupplierAudit | null>(null)
 
+  // Mallid
   const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([])
   const [tplId, setTplId] = useState<string>('')
   const [tplName, setTplName] = useState<string>('')
 
+  // pildid per-punkt
   const [images, setImages] = useState<Record<string, string[]>>({})
 
-  // tühi mustand
+  // --- INIT: tühi mustand ---
   useEffect(() => {
     const draft: SupplierAudit = {
       id: nanoid(),
@@ -34,27 +39,46 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setAudit(draft)
   }, [])
 
-  // Lae mallid serverist
+  // --- Lae mallid serverist ---
   useEffect(() => {
     fetch('/api/supplier-audit-templates')
-      .then(r => r.json())
+      .then((r) => r.json())
       .then((list: SupplierAuditTemplate[]) => setTemplates(list))
       .catch(() => setTemplates([]))
   }, [])
 
-  // kui valin malli, pane ka nimi inputti (väldi undefined)
+  // kui valin malli -> pane ka nimi inputti
   useEffect(() => {
-    const t = templates.find(x => x.id === tplId)
-    setTplName(t ? t.name : '')
+    const t = templates.find((x) => x.id === tplId)
+    setTplName(String(t?.name ?? ''))
   }, [tplId, templates])
 
-  function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
-    const el = e.currentTarget
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 800) + 'px'
+  // --- util: koopia audit.points -> malli payload ---
+  function buildTemplatePayload(name: string) {
+    if (!audit) return null
+    return {
+      name,
+      points: audit.points.map((p) => ({
+        id: p.id,
+        code: p.code,
+        title: p.title,
+        comment: '',
+        subQuestions: p.subQuestions.map((s) => ({
+          id: s.id,
+          text: s.text,
+          type: s.type,
+          options: s.options?.map((o) => ({
+            id: o.id,
+            label: o.label,
+            // punkte võib mitte olla -> 0
+            score: o.score ?? 0,
+          })),
+        })),
+      })),
+    }
   }
 
-  // rakenda mall
+  // --- rakenda mall auditisse ---
   function applyTemplate(tpl: SupplierAuditTemplate) {
     function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
       return {
@@ -62,47 +86,36 @@ export default function SupplierAuditPage({ token, role }: Props) {
         code: p.code,
         title: p.title,
         comment: '',
-        subQuestions: p.subQuestions.map(s => ({
+        subQuestions: p.subQuestions.map((s) => ({
           id: nanoid(),
           text: s.text,
           type: s.type,
-          options: s.options ? s.options.map(o => ({ id: nanoid(), label: o.label })) : undefined,
+          options: s.options
+            ? s.options.map((o) => ({
+                id: nanoid(),
+                label: o.label,
+                score: o.score ?? 0,
+              }))
+            : undefined,
           answerText: undefined,
-          answerOptions: undefined
-        }))
+          answerOptions: undefined,
+        })),
       }
     }
-    setAudit(a => a ? { ...a, points: tpl.points.map(clonePoint) } : a)
+    setAudit((a) => (a ? { ...a, points: tpl.points.map(clonePoint) } : a))
     setImages({})
   }
 
-  // --- liigutamine: punktid ja alam-küsimused ---
-
-  const movePoint = (from: number, to: number) => {
-    if (!audit) return
-    if (to < 0 || to >= audit.points.length) return
-    const next = [...audit.points]
-    const [item] = next.splice(from, 1)
-    next.splice(to, 0, item)
-    setAudit({ ...audit, points: next })
-  }
-
-  const moveSub = (pointId: string, from: number, to: number) => {
-    if (!audit) return
-    const point = audit.points.find(p => p.id === pointId)
-    if (!point) return
-    if (to < 0 || to >= point.subQuestions.length) return
-    const subs = [...point.subQuestions]
-    const [item] = subs.splice(from, 1)
-    subs.splice(to, 0, item)
-    // kasuta olemasolevat updatePoint funktsiooni
-    updatePoint(pointId, { subQuestions: subs })
-  }
-
-  // CRUD punktidele
+  // --- punktide CRUD ---
   const addPoint = () => {
     if (!audit) return
-    const p: SupplierAuditPoint = { id: nanoid(), title: 'Uus punkt', code: '', subQuestions: [], comment: '' }
+    const p: SupplierAuditPoint = {
+      id: nanoid(),
+      title: 'Uus punkt',
+      code: '',
+      subQuestions: [],
+      comment: '',
+    }
     setAudit({ ...audit, points: [...audit.points, p] })
   }
 
@@ -110,7 +123,9 @@ export default function SupplierAuditPage({ token, role }: Props) {
     if (!audit) return
     setAudit({
       ...audit,
-      points: audit.points.map(p => p.id === id ? { ...p, ...patch } : p)
+      points: audit.points.map((p) =>
+        p.id === id ? { ...p, ...patch } : p,
+      ),
     })
   }
 
@@ -118,146 +133,200 @@ export default function SupplierAuditPage({ token, role }: Props) {
     if (!audit) return
     setAudit({
       ...audit,
-      points: audit.points.filter(p => p.id !== id)
+      points: audit.points.filter((p) => p.id !== id),
     })
-    setImages(prev => {
-      const cp = { ...prev }; delete cp[id]; return cp;
+    setImages((prev) => {
+      const cp = { ...prev }
+      delete cp[id]
+      return cp
     })
   }
 
-  // Alam-küsimused
+  const movePoint = (id: string, dir: -1 | 1) => {
+    if (!audit) return
+    const idx = audit.points.findIndex((p) => p.id === id)
+    if (idx < 0) return
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= audit.points.length) return
+    const arr = [...audit.points]
+    const [item] = arr.splice(idx, 1)
+    arr.splice(newIdx, 0, item)
+    setAudit({ ...audit, points: arr })
+  }
+
+  // --- alam-küsimused ---
   const addSub = (point: SupplierAuditPoint, type: QuestionType) => {
-    const sub: SubQuestion = { id: nanoid(), text: 'Uus küsimus', type }
+    const sub: SubQuestion = {
+      id: nanoid(),
+      text: 'Uus küsimus',
+      type,
+      options: type === 'multi' ? [] : undefined,
+    }
     updatePoint(point.id, { subQuestions: [...point.subQuestions, sub] })
   }
 
-  const updateSub = (point: SupplierAuditPoint, id: string, patch: Partial<SubQuestion>) => {
-    const subs = point.subQuestions.map(s => s.id === id ? { ...s, ...patch } : s)
+  const updateSub = (
+    point: SupplierAuditPoint,
+    id: string,
+    patch: Partial<SubQuestion>,
+  ) => {
+    const subs = point.subQuestions.map((s) =>
+      s.id === id ? { ...s, ...patch } : s,
+    )
     updatePoint(point.id, { subQuestions: subs })
   }
 
   const removeSub = (point: SupplierAuditPoint, id: string) => {
-    const subs = point.subQuestions.filter(s => s.id !== id)
+    const subs = point.subQuestions.filter((s) => s.id !== id)
     updatePoint(point.id, { subQuestions: subs })
   }
 
-  // pildid per punkt
+  const moveSub = (point: SupplierAuditPoint, id: string, dir: -1 | 1) => {
+    const idx = point.subQuestions.findIndex((s) => s.id === id)
+    if (idx < 0) return
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= point.subQuestions.length) return
+    const arr = [...point.subQuestions]
+    const [item] = arr.splice(idx, 1)
+    arr.splice(newIdx, 0, item)
+    updatePoint(point.id, { subQuestions: arr })
+  }
+
+  // --- pildid ---
   function addImages(pointId: string, files: FileList | null) {
     if (!files || files.length === 0) return
     const list = Array.from(files)
-    Promise.all(list.map(f => new Promise<string>((resolve, reject) => {
-      const r = new FileReader()
-      r.onload = () => resolve(String(r.result))
-      r.onerror = reject
-      r.readAsDataURL(f)
-    }))).then(urls => {
-      setImages(p => ({ ...p, [pointId]: [...(p[pointId] || []), ...urls] }))
+    Promise.all(
+      list.map(
+        (f) =>
+          new Promise<string>((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(String(r.result))
+            r.onerror = reject
+            r.readAsDataURL(f)
+          }),
+      ),
+    ).then((urls) => {
+      setImages((p) => ({
+        ...p,
+        [pointId]: [...(p[pointId] || []), ...urls],
+      }))
     })
   }
   function removeImage(pointId: string, idx: number) {
-    setImages(p => {
+    setImages((p) => {
       const arr = [...(p[pointId] || [])]
       arr.splice(idx, 1)
       return { ...p, [pointId]: arr }
     })
   }
 
-  // Malli salvestamine (admin)
+  // --- Malli salvestamine (uus) ---
   async function saveAsTemplate() {
     if (role !== 'admin' || !token) {
       alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
       return
     }
     if (!audit) return
+    const name =
+      window.prompt(
+        'Uue mallina salvestamiseks nimi (nt "Supplier – Plastic Moulding")?',
+        tplName || '',
+      ) || ''
+    if (!name.trim()) return
 
-    const name = window.prompt('Mallile nimi (nt "Supplier – Plastic Moulding")?', tplName || undefined)
-    if (!name) return
+    const payload = buildTemplatePayload(name)
+    if (!payload) return
 
-    const payload = {
-      name,
-      points: audit.points.map(p => ({
-        id: p.id,
-        code: p.code,
-        title: p.title,
-        comment: '',
-        subQuestions: p.subQuestions.map(s => ({
-          id: s.id,
-          text: s.text,
-          type: s.type,
-          options: s.options?.map(o => ({ id: o.id, label: o.label }))
-        }))
-      }))
+    const r = await fetch('/api/supplier-audit-templates', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify(payload),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText))
+      return
     }
-
-    try {
-      const url = tplId ? `/api/supplier-audit-templates/${tplId}` : '/api/supplier-audit-templates'
-      const method = tplId ? 'PUT' : 'POST'
-
-      const r = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + token
-        },
-        body: JSON.stringify(payload)
-      })
-
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) {
-        alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText))
-        return
-      }
-
-      const tpl: SupplierAuditTemplate = j
-      // uuenda listi
-      setTemplates(prev => {
-        const existing = prev.find(x => x.id === tpl.id)
-        if (existing) {
-          return prev.map(x => x.id === tpl.id ? tpl : x)
-        }
-        return [...prev, tpl]
-      })
-      setTplId(tpl.id)
-      setTplName(tpl.name)
-      alert('Mall salvestatud.')
-    } catch (e: any) {
-      console.error(e)
-      alert('Malli salvestus ebaõnnestus (võrk või serveri viga).')
-    }
+    const tpl: SupplierAuditTemplate = j
+    setTemplates((prev) => [...prev, tpl])
+    setTplId(tpl.id)
+    setTplName(tpl.name)
+    alert('Uus mall salvestatud.')
   }
 
-  // malli kustutamine (admin)
-  async function deleteTemplate() {
-    if (role !== 'admin' || !token) return
-    if (!tplId) return alert('Vali enne mall.')
-    if (!window.confirm('Kas kustutada valitud mall?')) return
+  // --- olemasoleva malli uuendamine (PUT) ---
+  async function saveCurrentTemplate() {
+    if (role !== 'admin' || !token) {
+      alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
+      return
+    }
+    if (!audit || !tplId) {
+      alert('Vali kõigepealt mall rippmenüüst.')
+      return
+    }
+    const payload = buildTemplatePayload(tplName || 'Nimetu mall')
+    if (!payload) return
 
     const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify(payload),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      alert('Malli uuendamine ebaõnnestus: ' + (j.error || r.statusText))
+      return
+    }
+    const updated: SupplierAuditTemplate = j
+    setTemplates((prev) =>
+      prev.map((t) => (t.id === updated.id ? updated : t)),
+    )
+    setTplName(updated.name)
+    alert('Mall uuendatud.')
+  }
+
+  // --- malli kustutamine ---
+  async function deleteTemplate() {
+    if (role !== 'admin' || !token || !tplId) return
+    if (!window.confirm('Kas kustutada valitud mall koos küsimustega?')) return
+    const r = await fetch(`/api/supplier-audit-templates/${tplId}`, {
       method: 'DELETE',
-      headers: { Authorization: 'Bearer ' + token }
+      headers: { Authorization: 'Bearer ' + token },
     })
     const j = await r.json().catch(() => ({}))
     if (!r.ok) {
       alert('Malli kustutamine ebaõnnestus: ' + (j.error || r.statusText))
       return
     }
-    setTemplates(prev => prev.filter(t => t.id !== tplId))
+    setTemplates((prev) => prev.filter((t) => t.id !== tplId))
     setTplId('')
     setTplName('')
     alert('Mall kustutatud.')
   }
 
-  // poolik alla / üles
+  // --- poolik audit alla / üles ---
   function downloadPartial() {
     if (!audit) return
     const payload = { audit, images }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `supplier-audit-draft-${new Date().toISOString().slice(0,10)}.json`
+    a.download = `supplier-audit-draft-${new Date()
+      .toISOString()
+      .slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(a.href)
   }
+
   async function openPartial(file: File) {
     try {
       const text = await file.text()
@@ -271,7 +340,9 @@ export default function SupplierAuditPage({ token, role }: Props) {
     }
   }
 
-  function handlePrint() { window.print() }
+  function handlePrint() {
+    window.print()
+  }
 
   if (!audit) return null
 
@@ -283,62 +354,114 @@ export default function SupplierAuditPage({ token, role }: Props) {
           className="border p-2 rounded"
           placeholder="Tarnija nimi"
           value={audit.supplierName}
-          onChange={e => setAudit({ ...audit, supplierName: e.target.value })}
+          onChange={(e) =>
+            setAudit({ ...audit, supplierName: e.target.value })
+          }
         />
         <input
           className="border p-2 rounded"
           placeholder="Audiitor"
           value={audit.auditor}
-          onChange={e => setAudit({ ...audit, auditor: e.target.value })}
+          onChange={(e) =>
+            setAudit({ ...audit, auditor: e.target.value })
+          }
         />
         <input
           className="border p-2 rounded"
           type="date"
-          value={audit.date.slice(0,10)}
-          onChange={e => setAudit({ ...audit, date: new Date(e.target.value).toISOString() })}
+          value={audit.date.slice(0, 10)}
+          onChange={(e) =>
+            setAudit({
+              ...audit,
+              date: new Date(e.target.value).toISOString(),
+            })
+          }
         />
 
-        <button className="border p-2 rounded no-print" onClick={downloadPartial}>Lae alla poolik audit</button>
+        <button
+          className="border p-2 rounded no-print"
+          onClick={downloadPartial}
+        >
+          Lae alla poolik audit
+        </button>
         <label className="border p-2 rounded text-center cursor-pointer no-print">
           Ava poolik audit
-          <input type="file" className="hidden" accept="application/json" onChange={e => e.target.files && openPartial(e.target.files[0])} />
+          <input
+            type="file"
+            className="hidden"
+            accept="application/json"
+            onChange={(e) =>
+              e.target.files && openPartial(e.target.files[0])
+            }
+          />
         </label>
       </div>
 
       {/* Mallid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 no-print">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 no-print">
         <select
           className="border p-2 rounded"
           value={tplId}
-          onChange={e => setTplId(e.target.value)}
+          onChange={(e) => setTplId(e.target.value)}
         >
-          <option value="">— Vali auditi liik —</option>
-          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          <option value="">— Tarnijaaudit (vali liik) —</option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
         </select>
+
+        {/* malli nimi (admin) */}
+        {role === 'admin' && (
+          <input
+            className="border p-2 rounded"
+            placeholder="Malli nimi"
+            value={tplName}
+            onChange={(e) => setTplName(e.target.value)}
+          />
+        )}
 
         <button
           className="border p-2 rounded bg-green-100 border-green-600"
           disabled={!tplId}
           onClick={() => {
-            const tpl = templates.find(t => t.id === tplId)
+            const tpl = templates.find((t) => t.id === tplId)
             if (tpl) applyTemplate(tpl)
           }}
         >
-          {audit.points.length ? 'Sulge küsimustik ja lae uuesti' : 'Ava küsimustik'}
+          Ava küsimustik
         </button>
 
         {role === 'admin' && (
           <>
-            <button className="border p-2 rounded bg-black text-white" onClick={saveAsTemplate}>
-              Salvesta mallina
+            <button
+              className="border p-2 rounded bg-black text-white"
+              disabled={!tplId}
+              onClick={saveCurrentTemplate}
+            >
+              Salvesta mall
             </button>
-            <button className="border p-2 rounded" onClick={deleteTemplate}>
+            <button
+              className="border p-2 rounded"
+              onClick={saveAsTemplate}
+            >
+              Salvesta mallina (uus)
+            </button>
+            <button
+              className="border p-2 rounded"
+              disabled={!tplId}
+              onClick={deleteTemplate}
+            >
               Kustuta mall
             </button>
           </>
         )}
 
-        <button className="border p-2 rounded bg-gray-800 text-white" onClick={handlePrint}>
+        <button
+          className="border p-2 rounded"
+          onClick={handlePrint}
+        >
           Salvesta PDF
         </button>
       </div>
@@ -348,85 +471,107 @@ export default function SupplierAuditPage({ token, role }: Props) {
         <h2 className="text-xl font-semibold">Auditipunktid</h2>
 
         {role === 'admin' && (
-          <button className="px-3 py-2 rounded bg-black text-white no-print" onClick={addPoint}>
+          <button
+            className="px-3 py-2 rounded bg-black text-white no-print"
+            onClick={addPoint}
+          >
             + Lisa punkt
           </button>
         )}
       </div>
 
       <div className="space-y-6">
-        {audit.points.map((point, pointIndex) => (
-          <div key={point.id} className="border rounded-2xl p-4 shadow-sm">
+        {audit.points.map((point) => (
+          <div
+            key={point.id}
+            className="border rounded-2xl p-4 shadow-sm"
+          >
             <div className="flex gap-2 items-center mb-2">
               <input
                 className="border p-2 rounded w-24"
                 placeholder="Kood"
                 value={point.code ?? ''}
-                onChange={e => updatePoint(point.id, { code: e.target.value })}
+                onChange={(e) =>
+                  updatePoint(point.id, { code: e.target.value })
+                }
               />
               <input
                 className="border p-2 rounded flex-1 font-semibold"
                 placeholder="Punkti pealkiri"
                 value={point.title}
-                onChange={e => updatePoint(point.id, { title: e.target.value })}
+                onChange={(e) =>
+                  updatePoint(point.id, { title: e.target.value })
+                }
               />
 
               {role === 'admin' && (
                 <div className="ml-auto flex gap-2 items-center no-print">
                   <button
-                    className="px-2 py-1 border rounded text-xs"
-                    onClick={() => movePoint(pointIndex, pointIndex - 1)}
-                    disabled={pointIndex === 0}
-                    title="Punkt üles"
+                    className="px-2 py-1 border rounded"
+                    onClick={() => movePoint(point.id, -1)}
                   >
                     ↑
                   </button>
                   <button
-                    className="px-2 py-1 border rounded text-xs"
-                    onClick={() => movePoint(pointIndex, pointIndex + 1)}
-                    disabled={pointIndex === audit.points.length - 1}
-                    title="Punkt alla"
+                    className="px-2 py-1 border rounded"
+                    onClick={() => movePoint(point.id, 1)}
                   >
                     ↓
                   </button>
-
-                  <button className="px-3 py-1 border rounded" onClick={() => addSub(point, 'open')}>+ Küsimus</button>
-                  <button className="px-3 py-1 border rounded" onClick={() => addSub(point, 'multi')}>+ Valikvastustega</button>
-                  <button className="px-3 py-1 border rounded" onClick={() => removePoint(point.id)}>Kustuta punkt</button>
+                  <button
+                    className="px-3 py-1 border rounded"
+                    onClick={() => addSub(point, 'open')}
+                  >
+                    + Küsimus
+                  </button>
+                  <button
+                    className="px-3 py-1 border rounded"
+                    onClick={() => addSub(point, 'multi')}
+                  >
+                    + Valikvastustega
+                  </button>
+                  <button
+                    className="px-3 py-1 border rounded"
+                    onClick={() => removePoint(point.id)}
+                  >
+                    Kustuta punkt
+                  </button>
                 </div>
               )}
             </div>
 
             {/* alam-küsimused */}
             <div className="space-y-3">
-              {point.subQuestions.map((sub, subIndex) => (
-                <div key={sub.id} className="border rounded-xl p-3">
+              {point.subQuestions.map((sub) => (
+                <div
+                  key={sub.id}
+                  className="border rounded-xl p-3"
+                >
                   <div className="flex gap-2 items-center">
                     <span className="text-xs px-2 py-1 border rounded">
                       {sub.type === 'open' ? 'OPEN' : 'MULTI'}
                     </span>
                     <input
-                      className="border p-2 rounded flex-1 text-blue-700 font-medium"
+                      className="border p-2 rounded flex-1 text-blue-700"
                       placeholder="Küsimuse tekst"
                       value={sub.text}
-                      onChange={e => updateSub(point, sub.id, { text: e.target.value })}
+                      onChange={(e) =>
+                        updateSub(point, sub.id, {
+                          text: e.target.value,
+                        })
+                      }
                     />
-
                     {role === 'admin' && (
-                      <div className="flex gap-1 items-center no-print">
+                      <div className="flex gap-1 no-print">
                         <button
-                          className="px-2 py-1 border rounded text-xs"
-                          onClick={() => moveSub(point.id, subIndex, subIndex - 1)}
-                          disabled={subIndex === 0}
-                          title="Küsimus üles"
+                          className="px-2 py-1 border rounded"
+                          onClick={() => moveSub(point, sub.id, -1)}
                         >
                           ↑
                         </button>
                         <button
-                          className="px-2 py-1 border rounded text-xs"
-                          onClick={() => moveSub(point.id, subIndex, subIndex + 1)}
-                          disabled={subIndex === point.subQuestions.length - 1}
-                          title="Küsimus alla"
+                          className="px-2 py-1 border rounded"
+                          onClick={() => moveSub(point, sub.id, 1)}
                         >
                           ↓
                         </button>
@@ -444,7 +589,9 @@ export default function SupplierAuditPage({ token, role }: Props) {
                     <MultiOptionsEditor
                       sub={sub}
                       readonly={role !== 'admin'}
-                      onChange={(patch) => updateSub(point, sub.id, patch)}
+                      onChange={(patch) =>
+                        updateSub(point, sub.id, patch)
+                      }
                     />
                   )}
 
@@ -453,8 +600,11 @@ export default function SupplierAuditPage({ token, role }: Props) {
                       className="border p-2 rounded w-full mt-2 resize-y"
                       placeholder="Vastus (vaba tekst)"
                       value={sub.answerText ?? ''}
-                      onInput={autoResize}
-                      onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
+                      onChange={(e) =>
+                        updateSub(point, sub.id, {
+                          answerText: e.target.value,
+                        })
+                      }
                     />
                   )}
                 </div>
@@ -463,13 +613,16 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
             {/* kommentaar */}
             <div className="mt-3">
-              <label className="text-sm font-medium">Kommentaar</label>
+              <label className="text-sm font-medium">
+                Kommentaar
+              </label>
               <textarea
                 className="border p-2 rounded w-full mt-1 resize-y"
                 rows={3}
                 value={point.comment ?? ''}
-                onInput={autoResize}
-                onChange={e => updatePoint(point.id, { comment: e.target.value })}
+                onChange={(e) =>
+                  updatePoint(point.id, { comment: e.target.value })
+                }
               />
             </div>
 
@@ -480,18 +633,28 @@ export default function SupplierAuditPage({ token, role }: Props) {
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={e => addImages(point.id, e.target.files)}
+                onChange={(e) =>
+                  addImages(point.id, e.target.files)
+                }
                 className="no-print"
               />
               {(images[point.id]?.length ?? 0) > 0 && (
                 <div className="mt-2 grid md:grid-cols-2 gap-2">
                   {images[point.id]!.map((src, i) => (
                     <div key={i} className="border rounded p-1">
-                      <img src={src} alt={`Foto ${i+1}`} className="w-full h-auto" />
-                      <div className="text-xs text-gray-600 mt-1">Foto {i+1}</div>
+                      <img
+                        src={src}
+                        alt={`Foto ${i + 1}`}
+                        className="w-full h-auto"
+                      />
+                      <div className="text-xs text-gray-600 mt-1">
+                        Foto {i + 1}
+                      </div>
                       <button
                         className="text-xs underline mt-1 no-print"
-                        onClick={() => removeImage(point.id, i)}
+                        onClick={() =>
+                          removeImage(point.id, i)
+                        }
                       >
                         Eemalda
                       </button>
@@ -510,39 +673,99 @@ export default function SupplierAuditPage({ token, role }: Props) {
 function MultiOptionsEditor({
   sub,
   onChange,
-  readonly
+  readonly,
 }: {
   sub: SubQuestion
   onChange: (p: Partial<SubQuestion>) => void
   readonly?: boolean
 }) {
   const opts = sub.options ?? []
-  const addOpt = () => !readonly && onChange({ options: [...opts, { id: nanoid(), label: 'Uus valik' }] })
-  const setLabel = (id: string, label: string) =>
-    !readonly && onChange({ options: (sub.options ?? []).map(o => o.id === id ? { ...o, label } : o) })
+  const selected = new Set(sub.answerOptions ?? [])
+
+  const addOpt = () => {
+    if (readonly) return
+    onChange({
+      options: [
+        ...opts,
+        { id: nanoid(), label: 'Uus valik', score: 0 },
+      ],
+    })
+  }
+
+  const setLabel = (id: string, label: string) => {
+    if (readonly) return
+    onChange({
+      options: (sub.options ?? []).map((o) =>
+        o.id === id ? { ...o, label } : o,
+      ),
+    })
+  }
+
+  const setScore = (id: string, scoreStr: string) => {
+    if (readonly) return
+    const val = Number(scoreStr.replace(',', '.'))
+    const num = Number.isFinite(val) ? val : 0
+    onChange({
+      options: (sub.options ?? []).map((o) =>
+        o.id === id ? { ...o, score: num } : o,
+      ),
+    })
+  }
+
   const toggle = (id: string) => {
     const chosen = new Set(sub.answerOptions ?? [])
-    chosen.has(id) ? chosen.delete(id) : chosen.add(id)
+    if (chosen.has(id)) chosen.delete(id)
+    else chosen.add(id)
     onChange({ answerOptions: Array.from(chosen) })
   }
-  const remove = (id: string) =>
-    !readonly && onChange({ options: (sub.options ?? []).filter(o => o.id !== id) })
+
+  const remove = (id: string) => {
+    if (readonly) return
+    onChange({
+      options: (sub.options ?? []).filter((o) => o.id !== id),
+    })
+  }
+
+  const selectedScore = opts.reduce(
+    (sum, o) =>
+      selected.has(o.id) ? sum + (o.score ?? 0) : sum,
+    0,
+  )
+  const maxScore = opts.reduce(
+    (sum, o) => sum + (o.score ?? 0),
+    0,
+  )
 
   return (
     <div className="mt-2 space-y-2">
-      {(sub.options ?? []).map(o => (
-        <div key={o.id} className="flex items-center gap-2">
+      {opts.map((o) => (
+        <div
+          key={o.id}
+          className="flex items-center gap-2 flex-wrap"
+        >
           <input
             type="checkbox"
-            checked={(sub.answerOptions ?? []).includes(o.id)}
+            checked={selected.has(o.id)}
             onChange={() => toggle(o.id)}
           />
           <input
             className="border p-1 rounded flex-1"
             value={o.label}
-            onChange={e => setLabel(o.id, e.target.value)}
+            onChange={(e) => setLabel(o.id, e.target.value)}
             readOnly={readonly}
           />
+          {readonly ? (
+            <span className="text-xs text-gray-600">
+              {(o.score ?? 0).toString()} p
+            </span>
+          ) : (
+            <input
+              type="number"
+              className="border p-1 rounded w-20 text-xs"
+              value={o.score ?? 0}
+              onChange={(e) => setScore(o.id, e.target.value)}
+            />
+          )}
           {!readonly && (
             <button
               className="px-2 py-1 border rounded no-print"
@@ -553,8 +776,19 @@ function MultiOptionsEditor({
           )}
         </div>
       ))}
+
+      {opts.length > 0 && (
+        <div className="text-xs text-gray-700">
+          Skoor: <span className="font-semibold">{selectedScore}</span> /{' '}
+          {maxScore}
+        </div>
+      )}
+
       {!readonly && (
-        <button className="px-2 py-1 border rounded no-print" onClick={addOpt}>
+        <button
+          className="px-2 py-1 border rounded no-print"
+          onClick={addOpt}
+        >
           + Lisa valik
         </button>
       )}
