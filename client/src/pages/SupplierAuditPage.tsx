@@ -18,14 +18,12 @@ interface Props {
 export default function SupplierAuditPage({ token, role }: Props) {
   const [audit, setAudit] = useState<SupplierAudit | null>(null)
 
-  // Mallid serverist
   const [templates, setTemplates] = useState<SupplierAuditTemplate[]>([])
   const [tplId, setTplId] = useState<string>('')
 
-  // Pildid per punkt
   const [images, setImages] = useState<Record<string, string[]>>({})
 
-  // Tühi mustand esimesel laadimisel
+  // tühi mustand
   useEffect(() => {
     const draft: SupplierAudit = {
       id: nanoid(),
@@ -38,7 +36,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setAudit(draft)
   }, [])
 
-  // Lae tarnijaauditi mallid
+  // lae mallid serverist
   useEffect(() => {
     fetch('/api/supplier-audit-templates')
       .then(r => r.json())
@@ -46,7 +44,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       .catch(() => setTemplates([]))
   }, [])
 
-  // --- Malli rakendamine (deep clone uute ID-dega) ---
+  // --- mall rakendamine ---
   function applyTemplate(tpl: SupplierAuditTemplate) {
     function clonePoint(p: SupplierAuditPoint): SupplierAuditPoint {
       return {
@@ -74,7 +72,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setImages({})
   }
 
-  // --- Punktide CRUD (Lisa punkt / Muuda / Kustuta) ---
+  // --- punktid CRUD ---
   const addPoint = () => {
     if (!audit) return
     const p: SupplierAuditPoint = {
@@ -108,7 +106,6 @@ export default function SupplierAuditPage({ token, role }: Props) {
     })
   }
 
-  // --- Punktide järjekorra muutmine (↑ / ↓) ---
   const movePoint = (id: string, dir: -1 | 1) => {
     if (!audit) return
     const idx = audit.points.findIndex(p => p.id === id)
@@ -121,7 +118,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setAudit({ ...audit, points: newPoints })
   }
 
-  // --- Alam-küsimused ---
+  // --- alam-küsimused ---
   const addSub = (point: SupplierAuditPoint, type: QuestionType) => {
     const sub: SubQuestion = {
       id: nanoid(),
@@ -159,7 +156,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     updatePoint(point.id, { subQuestions: subs })
   }
 
-  // --- Pildid per punkt ---
+  // --- pildid ---
   function addImages(pointId: string, files: FileList | null) {
     if (!files || files.length === 0) return
     const list = Array.from(files)
@@ -189,7 +186,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     })
   }
 
-  // --- Malli salvestamine (admin ainult) ---
+  // --- malli salvestamine (uuendab olemasolevat või loob uue) ---
   async function saveAsTemplate() {
     if (role !== 'admin' || !token) {
       alert('Mallide salvestamine on lubatud ainult adminile (logi sisse).')
@@ -197,12 +194,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
     }
     if (!audit) return
 
+    const currentTpl = templates.find(t => t.id === tplId)
+    const defaultName = currentTpl?.name || ''
     const name = window.prompt(
-      'Mallile nimi (nt "Supplier – Plastic Moulding")?'
+      'Mallile nimi (nt "Supplier – Plastic Moulding")?',
+      defaultName
     )
     if (!name) return
 
-    // eemaldame vastused, jätame struktuuri + skoorid
     const payload = {
       name,
       points: audit.points.map(p => ({
@@ -223,26 +222,53 @@ export default function SupplierAuditPage({ token, role }: Props) {
       }))
     }
 
-    const r = await fetch('/api/supplier-audit-templates', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token
-      },
-      body: JSON.stringify(payload)
-    })
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}))
-      alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText))
-      return
+    try {
+      let url = '/api/supplier-audit-templates'
+      let method: 'POST' | 'PUT' = 'POST'
+
+      // kui on valitud olemasolev mall → uuenda seda
+      if (currentTpl) {
+        url = `/api/supplier-audit-templates/${currentTpl.id}`
+        method = 'PUT'
+      }
+
+      const r = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify(payload)
+      })
+
+      const j = await r
+        .json()
+        .catch(() => ({ error: r.statusText || 'unknown error' }))
+
+      if (!r.ok) {
+        alert('Malli salvestus ebaõnnestus: ' + (j.error || r.statusText))
+        return
+      }
+
+      const saved: SupplierAuditTemplate = j
+
+      // uuenda lokaalne mallide list
+      setTemplates(prev => {
+        const idx = prev.findIndex(t => t.id === saved.id)
+        if (idx === -1) return [...prev, saved]
+        const copy = [...prev]
+        copy[idx] = saved
+        return copy
+      })
+      setTplId(saved.id)
+      alert(method === 'POST' ? 'Uus mall salvestatud.' : 'Mall uuendatud.')
+    } catch (e) {
+      console.error(e)
+      alert('Malli salvestus ebaõnnestus (võrgu viga).')
     }
-    const tpl: SupplierAuditTemplate = await r.json()
-    setTemplates(prev => [...prev, tpl])
-    setTplId(tpl.id)
-    alert('Mall salvestatud.')
   }
 
-  // --- Pooliku auditi alla / üles ---
+  // poolik alla / üles
   function downloadPartial() {
     if (!audit) return
     const payload = { audit, images }
@@ -275,7 +301,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     window.print()
   }
 
-  // --- Valikvastustega küsimuste punktide arvutamine ---
+  // --- skooride arvutamine (multi) ---
   const scoreInfo = useMemo(() => {
     if (!audit) return { total: 0, max: 0 }
 
@@ -289,13 +315,11 @@ export default function SupplierAuditPage({ token, role }: Props) {
         const opts = sub.options || []
         const selected = new Set(sub.answerOptions || [])
 
-        // valitud vastuste summa
         for (const o of opts) {
           const s = typeof o.score === 'number' ? o.score : 0
           if (selected.has(o.id)) total += s
         }
 
-        // selle alamküsimuse maksimaalne võimalik
         let qMax = 0
         for (const o of opts) {
           const s = typeof o.score === 'number' ? o.score : 0
@@ -310,14 +334,13 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
   if (!audit) return null
 
-  // Kas üldse on multi-tüüpi küsimusi?
   const hasMultiQuestions = audit.points.some(p =>
     p.subQuestions.some(sq => sq.type === 'multi')
   )
 
   return (
     <div className="space-y-4">
-      {/* Peaandmed */}
+      {/* Meta */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
         <input
           className="border p-2 rounded"
@@ -482,12 +505,12 @@ export default function SupplierAuditPage({ token, role }: Props) {
                   key={sub.id}
                   className="border rounded-xl p-3 print-avoid-break"
                 >
-                  <div className="flex gap-2 items-center flex-wrap">
-                    <span className="text-xs px-2 py-1 border rounded">
+                  <div className="flex gap-2 items-start flex-wrap">
+                    <span className="text-xs px-2 py-1 border rounded mt-1">
                       {sub.type === 'open' ? 'OPEN' : 'MULTI'}
                     </span>
-                    <input
-                      className="border p-2 rounded flex-1 text-blue-700"
+                    <textarea
+                      className="border p-2 rounded flex-1 text-blue-700 resize-y min-h-[3rem]"
                       placeholder="Küsimuse tekst"
                       value={sub.text}
                       onChange={e =>
@@ -532,7 +555,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
 
                   {sub.type === 'open' && (
                     <textarea
-                      className="border p-2 rounded w-full mt-2 resize-y"
+                      className="border p-2 rounded w-full mt-2 resize-y min-h-[3rem]"
                       placeholder="Vastus (vaba tekst)"
                       value={sub.answerText ?? ''}
                       onChange={e =>
@@ -550,7 +573,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
             <div className="mt-3">
               <label className="text-sm font-medium">Kommentaar</label>
               <textarea
-                className="border p-2 rounded w-full mt-1 resize-y"
+                className="border p-2 rounded w-full mt-1 resize-y min-h-[3rem]"
                 rows={3}
                 value={point.comment ?? ''}
                 onChange={e =>
@@ -603,7 +626,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
         ))}
       </div>
 
-      {/* Punktisumma kokkuvõte */}
+      {/* punktisumma kokkuvõte */}
       {hasMultiQuestions && (
         <div className="mt-4 p-3 border rounded bg-gray-50 print-avoid-break">
           <div className="font-semibold">
