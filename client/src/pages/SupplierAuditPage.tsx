@@ -696,7 +696,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
               rows={4}
               placeholder="Puudused, riskid ja parendusettepanekud"
               data-autoresize="1"
-              value[(audit as any).summaryWeaknesses || '']
+              value={(audit as any).summaryWeaknesses || ''}
               onInput={autoResize}
               onChange={e =>
                 setAudit({ ...(audit as any), summaryWeaknesses: e.target.value } as SupplierAudit)
@@ -841,6 +841,7 @@ function MultiOptionsEditor({
     </div>
   )
 }
+
 
 
 
