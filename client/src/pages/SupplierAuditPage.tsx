@@ -1,4 +1,3 @@
-// client/src/pages/SupplierAuditPage.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import { nanoid } from 'nanoid'
 import type {
@@ -16,11 +15,14 @@ interface Props {
   role: Role
 }
 
-// textarea automaatne kõrgus
-function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
-  const el = e.currentTarget
+// textarea automaatne kõrgus (kasutame nii sisestamisel kui globaalsetes uuendustes)
+function autoResizeElement(el: HTMLTextAreaElement) {
   el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 400) + 'px'
+  el.style.height = Math.min(el.scrollHeight, 1000) + 'px'
+}
+
+function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
+  autoResizeElement(e.currentTarget)
 }
 
 // payload malli salvestamiseks (uue malli loomiseks ja olemasoleva uuendamiseks)
@@ -79,6 +81,13 @@ export default function SupplierAuditPage({ token, role }: Props) {
       .then((list: SupplierAuditTemplate[]) => setTemplates(list))
       .catch(() => setTemplates([]))
   }, [])
+
+  // KÕIKIDE textarea-de automaatne venitus, kui audit muutub
+  useEffect(() => {
+    if (!audit) return
+    const els = document.querySelectorAll<HTMLTextAreaElement>('textarea[data-autoresize="1"]')
+    els.forEach(el => autoResizeElement(el))
+  }, [audit])
 
   // punktisumma (valikvastustega küsimused)
   const scoreSummary = useMemo(() => {
@@ -534,6 +543,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
                     <textarea
                       className="border p-2 rounded flex-1 resize-y text-blue-700"
                       placeholder="Küsimuse tekst"
+                      data-autoresize="1"
                       value={sub.text}
                       onInput={autoResize}
                       onChange={e => updateSub(point, sub.id, { text: e.target.value })}
@@ -574,6 +584,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
                     <textarea
                       className="border p-2 rounded w-full mt-2 resize-y"
                       placeholder="Vastus (vaba tekst)"
+                      data-autoresize="1"
                       value={sub.answerText ?? ''}
                       onInput={autoResize}
                       onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
@@ -607,6 +618,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
               <textarea
                 className="border p-2 rounded w-full mt-1 resize-y"
                 rows={3}
+                data-autoresize="1"
                 value={point.comment ?? ''}
                 onInput={autoResize}
                 onChange={e => updatePoint(point.id, { comment: e.target.value })}
@@ -669,6 +681,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
               className="border rounded w-full p-2 resize-y"
               rows={4}
               placeholder="Kirjelda tarnija tugevusi ja häid praktikaid"
+              data-autoresize="1"
               value={(audit as any).summaryStrengths || ''}
               onInput={autoResize}
               onChange={e =>
@@ -682,7 +695,8 @@ export default function SupplierAuditPage({ token, role }: Props) {
               className="border rounded w-full p-2 resize-y"
               rows={4}
               placeholder="Puudused, riskid ja parendusettepanekud"
-              value={(audit as any).summaryWeaknesses || ''}
+              data-autoresize="1"
+              value[(audit as any).summaryWeaknesses || '']
               onInput={autoResize}
               onChange={e =>
                 setAudit({ ...(audit as any), summaryWeaknesses: e.target.value } as SupplierAudit)
@@ -777,6 +791,7 @@ function MultiOptionsEditor({
             />
             <textarea
               className="border p-1 rounded flex-1 resize-y"
+              data-autoresize="1"
               value={o.label}
               onInput={autoResize}
               onChange={e => setLabel(o.id, e.target.value)}
