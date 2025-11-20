@@ -23,7 +23,7 @@ function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
   el.style.height = Math.min(el.scrollHeight, 400) + 'px'
 }
 
-// payload malli salvestamiseks
+// payload malli salvestamiseks (uue malli loomiseks ja olemasoleva uuendamiseks)
 function buildTemplatePayload(audit: SupplierAudit, name: string) {
   return {
     name,
@@ -72,7 +72,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
     setAudit(draft)
   }, [])
 
-  // lae mallid
+  // lae mallid serverist
   useEffect(() => {
     fetch('/api/supplier-audit-templates')
       .then(r => r.json())
@@ -80,7 +80,7 @@ export default function SupplierAuditPage({ token, role }: Props) {
       .catch(() => setTemplates([]))
   }, [])
 
-  // punktisumma (MULTI küsimused)
+  // punktisumma (valikvastustega küsimused)
   const scoreSummary = useMemo(() => {
     if (!audit) return { total: 0, max: 0 }
 
@@ -363,24 +363,37 @@ export default function SupplierAuditPage({ token, role }: Props) {
   return (
     <div className="space-y-4">
       {/* Meta */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
         <input
           className="border p-2 rounded"
           placeholder="Tarnija nimi"
           value={audit.supplierName}
           onChange={e => setAudit({ ...audit, supplierName: e.target.value })}
         />
+
+        <input
+          className="border p-2 rounded"
+          placeholder="Auditeeritav"
+          value={(audit as any).auditee || ''}
+          onChange={e =>
+            setAudit({ ...(audit as any), auditee: e.target.value } as SupplierAudit)
+          }
+        />
+
         <input
           className="border p-2 rounded"
           placeholder="Audiitor"
           value={audit.auditor}
           onChange={e => setAudit({ ...audit, auditor: e.target.value })}
         />
+
         <input
           className="border p-2 rounded"
           type="date"
           value={audit.date.slice(0, 10)}
-          onChange={e => setAudit({ ...audit, date: new Date(e.target.value).toISOString() })}
+          onChange={e =>
+            setAudit({ ...audit, date: new Date(e.target.value).toISOString() })
+          }
         />
 
         <button className="border p-2 rounded no-print" onClick={downloadPartial}>
