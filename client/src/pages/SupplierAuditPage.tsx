@@ -645,6 +645,39 @@ export default function SupplierAuditPage({ token, role }: Props) {
           </div>
         </div>
       )}
+
+      {/* AUDITI KOKKUVÕTE */}
+      <div className="border rounded-lg p-3 bg-gray-50">
+        <div className="font-semibold text-sm mb-2">Auditi kokkuvõte</div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div>
+            <div className="text-xs font-semibold mb-1">Tugevused</div>
+            <textarea
+              className="border rounded w-full p-2 resize-y"
+              rows={4}
+              placeholder="Kirjelda tarnija tugevusi ja häid praktikaid"
+              value={(audit as any).summaryStrengths || ''}
+              onInput={autoResize}
+              onChange={e =>
+                setAudit({ ...(audit as any), summaryStrengths: e.target.value } as SupplierAudit)
+              }
+            />
+          </div>
+          <div>
+            <div className="text-xs font-semibold mb-1">Puudused / parendusvaldkonnad</div>
+            <textarea
+              className="border rounded w-full p-2 resize-y"
+              rows={4}
+              placeholder="Puudused, riskid ja parendusettepanekud"
+              value={(audit as any).summaryWeaknesses || ''}
+              onInput={autoResize}
+              onChange={e =>
+                setAudit({ ...(audit as any), summaryWeaknesses: e.target.value } as SupplierAudit)
+              }
+            />
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -780,6 +813,7 @@ function MultiOptionsEditor({
     </div>
   )
 }
+
 
 
 
