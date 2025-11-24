@@ -581,15 +581,22 @@ export default function SupplierAuditPage({ token, role }: Props) {
                   )}
 
                   {sub.type === 'open' && (
-                    <textarea
-                      className="border p-2 rounded w-full mt-2 resize-y"
-                      placeholder="Vastus (vaba tekst)"
-                      data-autoresize="1"
-                      value={sub.answerText ?? ''}
-                      onInput={autoResize}
-                      onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
-                    />
-                  )}
+  <>
+    <textarea
+      className="border p-2 rounded w-full mt-2 resize-y hide-in-print"
+      placeholder="Vastus (vaba tekst)"
+      data-autoresize="1"
+      value={sub.answerText ?? ''}
+      onInput={autoResize}
+      onChange={e => updateSub(point, sub.id, { answerText: e.target.value })}
+    />
+
+    <div className="print-only textarea-print mt-2">
+      {sub.answerText ?? ''}
+    </div>
+  </>
+)}
+
                 </div>
               ))}
             </div>
