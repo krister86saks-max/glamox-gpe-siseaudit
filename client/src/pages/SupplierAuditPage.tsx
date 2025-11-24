@@ -15,7 +15,7 @@ interface Props {
   role: Role
 }
 
-// textarea automaatne kõrgus (kasutame nii sisestamisel kui globaalsetes uuendustes)
+// textarea automaatne kõrgus
 function autoResizeElement(el: HTMLTextAreaElement) {
   el.style.height = 'auto'
   el.style.height = Math.min(el.scrollHeight, 1000) + 'px'
@@ -25,7 +25,7 @@ function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
   autoResizeElement(e.currentTarget)
 }
 
-// payload malli salvestamiseks (uue malli loomiseks ja olemasoleva uuendamiseks)
+// payload malli salvestamiseks
 function buildTemplatePayload(audit: SupplierAudit, name: string) {
   return {
     name,
@@ -594,35 +594,20 @@ export default function SupplierAuditPage({ token, role }: Props) {
               ))}
             </div>
 
-            {/* alam-küsimuste lisamise nupud */}
-            {role === 'admin' && (
-              <div className="mt-2 flex gap-2 no-print">
-                <button
-                  className="px-3 py-1 border rounded"
-                  onClick={() => addSub(point, 'open')}
-                >
-                  + Küsimus
-                </button>
-                <button
-                  className="px-3 py-1 border rounded"
-                  onClick={() => addSub(point, 'multi')}
-                >
-                  + Valikvastustega
-                </button>
-              </div>
-            )}
-
-            {/* kommentaar */}
+            {/* kommentaar – eraldi ekraan & print */}
             <div className="mt-3">
               <label className="text-sm font-medium">Kommentaar</label>
               <textarea
-                className="border p-2 rounded w-full mt-1 resize-y"
+                className="border p-2 rounded w-full mt-1 resize-y hide-in-print"
                 rows={3}
                 data-autoresize="1"
                 value={point.comment ?? ''}
                 onInput={autoResize}
                 onChange={e => updatePoint(point.id, { comment: e.target.value })}
               />
+              <div className="print-only textarea-print mt-1">
+                {point.comment ?? ''}
+              </div>
             </div>
 
             {/* pildid */}
@@ -671,14 +656,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
         </div>
       )}
 
-      {/* AUDITI KOKKUVÕTE */}
+      {/* AUDITI KOKKUVÕTE – tugevused / puudused, eraldi ekraan & print */}
       <div className="border rounded-lg p-3 bg-gray-50">
         <div className="font-semibold text-sm mb-2">Auditi kokkuvõte</div>
         <div className="grid md:grid-cols-2 gap-3">
           <div>
             <div className="text-xs font-semibold mb-1">Tugevused</div>
             <textarea
-              className="border rounded w-full p-2 resize-y"
+              className="border rounded w-full p-2 resize-y hide-in-print"
               rows={4}
               placeholder="Kirjelda tarnija tugevusi ja häid praktikaid"
               data-autoresize="1"
@@ -688,11 +673,14 @@ export default function SupplierAuditPage({ token, role }: Props) {
                 setAudit({ ...(audit as any), summaryStrengths: e.target.value } as SupplierAudit)
               }
             />
+            <div className="print-only textarea-print mt-1">
+              {(audit as any).summaryStrengths || ''}
+            </div>
           </div>
           <div>
             <div className="text-xs font-semibold mb-1">Puudused / parendusvaldkonnad</div>
             <textarea
-              className="border rounded w-full p-2 resize-y"
+              className="border rounded w-full p-2 resize-y hide-in-print"
               rows={4}
               placeholder="Puudused, riskid ja parendusettepanekud"
               data-autoresize="1"
@@ -702,6 +690,9 @@ export default function SupplierAuditPage({ token, role }: Props) {
                 setAudit({ ...(audit as any), summaryWeaknesses: e.target.value } as SupplierAudit)
               }
             />
+            <div className="print-only textarea-print mt-1">
+              {(audit as any).summaryWeaknesses || ''}
+            </div>
           </div>
         </div>
       </div>
