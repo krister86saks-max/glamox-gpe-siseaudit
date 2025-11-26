@@ -137,10 +137,10 @@ export default function SupplierAuditPage({ token, role }: Props) {
           type: s.type,
           options: s.options
             ? s.options.map(o => ({
-                id: nanoid(),
-                label: o.label,
-                score: (o as any).score,
-              })) as any
+              id: nanoid(),
+              label: o.label,
+              score: (o as any).score,
+            })) as any
             : undefined,
           answerText: undefined,
           answerOptions: undefined
